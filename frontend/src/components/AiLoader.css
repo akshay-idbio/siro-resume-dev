@@ -1,0 +1,229 @@
+.ai-loader-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 173, 190, 0.45), transparent 32%),
+    radial-gradient(circle at 82% 18%, rgba(255, 221, 228, 0.86), transparent 35%),
+    rgba(255, 248, 250, 0.86);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.ai-loader-card {
+  width: min(500px, 100%);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(224, 88, 120, 0.2);
+  border-radius: 26px;
+  padding: 32px;
+  text-align: center;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.72) inset,
+    0 20px 48px rgba(176, 70, 98, 0.16),
+    0 6px 18px rgba(176, 70, 98, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.ai-loader-card::before {
+  content: "";
+  position: absolute;
+  width: 290px;
+  height: 290px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 151, 174, 0.28), transparent 70%);
+  top: -130px;
+  right: -130px;
+  pointer-events: none;
+}
+
+.ai-loader-card::after {
+  content: "";
+  position: absolute;
+  width: 230px;
+  height: 230px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 190, 203, 0.32), transparent 70%);
+  bottom: -105px;
+  left: -105px;
+  pointer-events: none;
+}
+
+.ai-loader-card > * {
+  position: relative;
+  z-index: 2;
+}
+
+.ai-orbit {
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 20px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.brain-core {
+  width: 62px;
+  height: 62px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #d84670 0%, #ef5f7e 55%, #c63b61 100%);
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 21px;
+  letter-spacing: 1.3px;
+  box-shadow:
+    0 12px 28px rgba(216, 70, 112, 0.3),
+    0 0 0 7px rgba(216, 70, 112, 0.08);
+}
+
+.orbit-ring {
+  position: absolute;
+  border-radius: 999px;
+  border: 2px solid rgba(216, 70, 112, 0.36);
+}
+
+.ring-one {
+  inset: 5px;
+  animation: spin 2.6s linear infinite;
+  border-left-color: transparent;
+  border-bottom-color: rgba(255, 210, 220, 0.8);
+}
+
+.ring-two {
+  inset: 19px;
+  animation: spinReverse 1.7s linear infinite;
+  border-right-color: transparent;
+  border-top-color: rgba(255, 210, 220, 0.8);
+}
+
+.ai-loader-card h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  font-weight: 850;
+  color: #2d1720;
+  letter-spacing: -0.3px;
+}
+
+.ai-loader-card p {
+  margin: 0 auto;
+  color: #735160;
+  line-height: 1.6;
+  max-width: 400px;
+  font-size: 14px;
+}
+
+.loader-steps {
+  margin: 22px 0;
+  display: grid;
+  gap: 10px;
+}
+
+.loader-steps span {
+  background: #fff7f9;
+  border: 1px solid rgba(216, 70, 112, 0.16);
+  color: #7a5363;
+  border-radius: 13px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  font-weight: 700;
+  animation: pulseText 1.8s ease-in-out infinite;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.loader-steps span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loader-steps span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.loader-steps span:nth-child(4) {
+  animation-delay: 0.6s;
+}
+
+.progress-line {
+  height: 8px;
+  background: #ffe5eb;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(216, 70, 112, 0.12);
+}
+
+.progress-line div {
+  height: 100%;
+  width: 45%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #d84670, #ef5f7e, #ff9aad);
+  box-shadow: 0 0 16px rgba(216, 70, 112, 0.35);
+  animation: moveLine 1.4s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinReverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes pulseText {
+  0%, 100% {
+    opacity: 0.68;
+    transform: scale(0.99);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes moveLine {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+@media (max-width: 520px) {
+  .ai-loader-card {
+    padding: 28px 22px;
+    border-radius: 22px;
+  }
+
+  .ai-orbit {
+    width: 100px;
+    height: 100px;
+  }
+
+  .brain-core {
+    width: 58px;
+    height: 58px;
+    border-radius: 20px;
+    font-size: 20px;
+  }
+
+  .ai-loader-card h2 {
+    font-size: 22px;
+  }
+
+  .ai-loader-card p {
+    font-size: 13.5px;
+  }
+}
