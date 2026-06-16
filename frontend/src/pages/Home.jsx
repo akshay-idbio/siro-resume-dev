@@ -50,6 +50,26 @@ export default function Home() {
     current_batch: "",
   });
 
+  const [costInfo, setCostInfo] = useState({
+    model_name: "",
+    input_cost_usd: 0,
+    output_cost_usd: 0,
+    total_cost_usd: 0,
+    total_cost_inr: 0,
+    cost_per_resume_usd: 0,
+    cost_per_resume_inr: 0,
+  });
+
+  const [runtimeInfo, setRuntimeInfo] = useState({
+    started_at: "",
+    completed_at: "",
+    total_seconds: 0,
+    total_time_text: "",
+    average_seconds_per_resume: 0,
+  });
+
+  const [resumeLogs, setResumeLogs] = useState([]);
+
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) {
@@ -108,6 +128,25 @@ export default function Home() {
       total_tokens: 0,
     });
     setError("");
+    setCostInfo({
+      model_name: "",
+      input_cost_usd: 0,
+      output_cost_usd: 0,
+      total_cost_usd: 0,
+      total_cost_inr: 0,
+      cost_per_resume_usd: 0,
+      cost_per_resume_inr: 0,
+    });
+
+    setRuntimeInfo({
+      started_at: "",
+      completed_at: "",
+      total_seconds: 0,
+      total_time_text: "",
+      average_seconds_per_resume: 0,
+    });
+
+    setResumeLogs([]);
   };
 
   const handleLogout = () => {
@@ -240,6 +279,33 @@ export default function Home() {
           output_tokens: data.token_usage?.output_tokens || 0,
           total_tokens: data.token_usage?.total_tokens || 0,
         });
+
+        if (data.cost_info) {
+          setCostInfo({
+            model_name: data.cost_info.model_name || "",
+            input_cost_usd: data.cost_info.input_cost_usd || 0,
+            output_cost_usd: data.cost_info.output_cost_usd || 0,
+            total_cost_usd: data.cost_info.total_cost_usd || 0,
+            total_cost_inr: data.cost_info.total_cost_inr || 0,
+            cost_per_resume_usd: data.cost_info.cost_per_resume_usd || 0,
+            cost_per_resume_inr: data.cost_info.cost_per_resume_inr || 0,
+          });
+        }
+
+        if (data.runtime_info) {
+          setRuntimeInfo({
+            started_at: data.runtime_info.started_at || "",
+            completed_at: data.runtime_info.completed_at || "",
+            total_seconds: data.runtime_info.total_seconds || 0,
+            total_time_text: data.runtime_info.total_time_text || "",
+            average_seconds_per_resume:
+              data.runtime_info.average_seconds_per_resume || 0,
+          });
+        }
+
+        if (Array.isArray(data.resume_logs)) {
+          setResumeLogs(data.resume_logs);
+        }
 
         if (data.status === "completed") {
           clearInterval(pollIntervalRef.current);
@@ -702,23 +768,135 @@ export default function Home() {
 
         {processed && (
           <section className="token-card">
-            <h3>AI Token Usage</h3>
+            <h3>AI Token Usage & Estimated Cost</h3>
 
             <div className="token-grid">
               <div>
-                <h4>{tokenUsage.input_tokens}</h4>
+                <h4>{tokenUsage.input_tokens.toLocaleString()}</h4>
                 <p>Input Tokens</p>
               </div>
 
               <div>
-                <h4>{tokenUsage.output_tokens}</h4>
+                <h4>{tokenUsage.output_tokens.toLocaleString()}</h4>
                 <p>Output Tokens</p>
               </div>
 
               <div>
-                <h4>{tokenUsage.total_tokens}</h4>
+                <h4>{tokenUsage.total_tokens.toLocaleString()}</h4>
                 <p>Total Tokens Used</p>
               </div>
+
+              <div>
+                <h4>${Number(costInfo.total_cost_usd || 0).toFixed(2)}</h4>
+                <p>Estimated Cost USD</p>
+              </div>
+
+              <div>
+                <h4>₹{Number(costInfo.total_cost_inr || 0).toFixed(0)}</h4>
+                <p>Estimated Cost INR</p>
+              </div>
+
+              <div>
+                <h4>₹{Number(costInfo.cost_per_resume_inr || 0).toFixed(2)}</h4>
+                <p>Cost Per Resume</p>
+              </div>
+            </div>
+
+            <p className="upload-note">
+              Model used: <strong>{costInfo.model_name || "Claude"}</strong>. Cost is estimated from token usage and configured model pricing. Final billing may vary.
+            </p>
+          </section>
+        )}
+
+        {processed && (
+          <section className="token-card">
+            <h3>Processing Runtime Summary</h3>
+
+            <div className="token-grid">
+              <div>
+                <h4>{bulkStatus.total || selectedFiles.length}</h4>
+                <p>Total Files</p>
+              </div>
+
+              <div>
+                <h4>{bulkStatus.successful || processedCount}</h4>
+                <p>Successful</p>
+              </div>
+
+              <div>
+                <h4>{bulkStatus.skipped || skippedFiles.length}</h4>
+                <p>Skipped</p>
+              </div>
+
+              <div>
+                <h4>{bulkStatus.failed || 0}</h4>
+                <p>Failed</p>
+              </div>
+
+              <div>
+                <h4>{runtimeInfo.total_time_text || "-"}</h4>
+                <p>Total Time</p>
+              </div>
+
+              <div>
+                <h4>
+                  {Number(runtimeInfo.average_seconds_per_resume || 0).toFixed(2)} sec
+                </h4>
+                <p>Avg Time / Resume</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {processed && resumeLogs.length > 0 && (
+          <section className="requirements-section">
+            <div className="section-header compact-section-header">
+              <div>
+                <h2>Resume Processing Logs</h2>
+                <p>
+                  Latest per-resume processing logs with runtime and token usage.
+                </p>
+              </div>
+            </div>
+
+            <div className="table-card">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>File Name</th>
+                    <th>Status</th>
+                    <th>Time Taken</th>
+                    <th>Input Tokens</th>
+                    <th>Output Tokens</th>
+                    <th>Total Tokens</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {resumeLogs.map((log, index) => (
+                    <tr key={index}>
+                      <td>{log.index || index + 1}</td>
+                      <td>{log.filename || "-"}</td>
+                      <td>
+                        <span
+                          className={
+                            String(log.status || "").toLowerCase().includes("skip")
+                              ? "status-pill closed"
+                              : "status-pill open"
+                          }
+                        >
+                          {log.status || "-"}
+                        </span>
+                      </td>
+                      <td>{log.duration_text || `${log.duration_seconds || 0} sec`}</td>
+                      <td>{Number(log.input_tokens || 0).toLocaleString()}</td>
+                      <td>{Number(log.output_tokens || 0).toLocaleString()}</td>
+                      <td>{Number(log.total_tokens || 0).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
         )}

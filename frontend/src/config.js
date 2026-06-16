@@ -13,8 +13,8 @@
 // export default config;
 
 const config = {
-  API_BASE_URL: "/api",
-  // API_BASE_URL: "http://localhost:8006",
+  // API_BASE_URL: "/api",
+  API_BASE_URL: "http://localhost:8006",
 
     AUTH_USERNAME: "siro",
   AUTH_PASSWORD: "siroai",
