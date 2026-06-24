@@ -502,7 +502,37 @@ export default function Home() {
                   Refresh
                 </button>
               )} */}
+
+              {requirementUploaded && jobs.length > 0 && (
+                <button
+                  className="refresh-btn"
+                  onClick={() => navigate("/hybrid-analyze")}
+                  disabled={uploadingRequirement || uploading}
+                >
+                  Run Hybrid Approach
+                </button>
+              )}
+
+              {requirementUploaded && jobs.length > 0 && (
+                <button
+                  className="refresh-btn"
+                  onClick={() => navigate("/lowcost-analyze")}
+                  disabled={uploadingRequirement || uploading}
+                >
+                  Run Low Cost Approach
+                </button>
+              )}
             </div>
+
+            {/* {requirementUploaded && jobs.length > 0 && (
+              <button
+                className="refresh-btn"
+                onClick={() => navigate("/ceo-analyze")}
+                disabled={uploadingRequirement || uploading}
+              >
+                Run CEO Original
+              </button>
+            )} */}
           </div>
 
           {!requirementUploaded && !loading && (
@@ -609,6 +639,8 @@ export default function Home() {
             only after requirements are loaded successfully.
           </section>
         )}
+
+
 
         {requirementUploaded && jobs.length > 0 && (
           <section className="workflow-card">

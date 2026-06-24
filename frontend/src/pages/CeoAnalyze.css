@@ -1,0 +1,480 @@
+.ceo-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(251, 146, 60, 0.18), transparent 32%),
+    radial-gradient(circle at top right, rgba(234, 179, 8, 0.16), transparent 28%),
+    linear-gradient(135deg, #140b05, #201208 48%, #111827);
+  color: #fff7ed;
+}
+
+.ceo-header {
+  padding: 34px clamp(18px, 4vw, 56px);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.18);
+}
+
+.ceo-header h1 {
+  margin: 14px 0 8px;
+  font-size: clamp(32px, 5vw, 54px);
+  letter-spacing: -1.5px;
+}
+
+.ceo-header p {
+  max-width: 850px;
+  color: #fed7aa;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.ceo-back-btn {
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffedd5;
+  border-radius: 999px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.ceo-badge {
+  display: inline-flex;
+  margin-top: 22px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(251, 146, 60, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  color: #fde68a;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.3px;
+}
+
+.ceo-container {
+  width: min(1180px, calc(100% - 28px));
+  margin: 0 auto;
+  padding: 28px 0 60px;
+}
+
+.ceo-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.ceo-info-card,
+.ceo-card,
+.ceo-cost-card,
+.ceo-log-card,
+.ceo-running-card,
+.ceo-success-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.095), rgba(255, 255, 255, 0.045));
+  border: 1px solid rgba(251, 191, 36, 0.18);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  border-radius: 28px;
+}
+
+.ceo-info-card {
+  padding: 22px;
+}
+
+.ceo-info-card span {
+  color: #fbbf24;
+  font-size: 13px;
+}
+
+.ceo-info-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 28px;
+  color: #ffffff;
+}
+
+.ceo-info-card p {
+  color: #fed7aa;
+  margin-bottom: 0;
+}
+
+.ceo-card {
+  padding: 28px;
+}
+
+.ceo-card-head {
+  margin-bottom: 24px;
+}
+
+.ceo-card h2,
+.ceo-cost-card h3,
+.ceo-log-card h3 {
+  margin: 0 0 8px;
+  color: #ffffff;
+}
+
+.ceo-card p {
+  color: #fed7aa;
+  line-height: 1.6;
+}
+
+.ceo-form-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.ceo-field {
+  display: grid;
+  gap: 8px;
+}
+
+.ceo-field span {
+  color: #fde68a;
+  font-weight: 800;
+}
+
+.ceo-field input {
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  background: rgba(15, 23, 42, 0.68);
+  color: #ffffff;
+  border-radius: 18px;
+  padding: 14px 16px;
+  outline: none;
+}
+
+.ceo-upload-small {
+  display: grid;
+  gap: 8px;
+}
+
+.ceo-hidden-input {
+  display: none;
+}
+
+.ceo-upload-box {
+  width: 100%;
+  min-height: 180px;
+  border: 1.5px dashed rgba(251, 191, 36, 0.45);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at center, rgba(251, 146, 60, 0.12), transparent 40%),
+    rgba(15, 23, 42, 0.62);
+  color: #fff7ed;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 26px;
+}
+
+.ceo-upload-box:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ceo-upload-icon {
+  width: 58px;
+  height: 58px;
+  border-radius: 20px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #f97316, #eab308);
+  font-size: 28px;
+  margin-bottom: 12px;
+}
+
+.ceo-upload-box strong {
+  font-size: 20px;
+}
+
+.ceo-upload-box span {
+  color: #fed7aa;
+}
+
+.ceo-file-list {
+  margin-top: 18px;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(251, 191, 36, 0.14);
+  border-radius: 22px;
+}
+
+.ceo-file-list h3 {
+  margin-top: 0;
+}
+
+.ceo-file-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid rgba(251, 191, 36, 0.12);
+  padding: 10px 0;
+  color: #ffedd5;
+}
+
+.ceo-file-list small {
+  color: #fed7aa;
+}
+
+.ceo-error {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+}
+
+.ceo-primary-btn,
+.ceo-download-btn,
+.ceo-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 800;
+}
+
+.ceo-primary-btn {
+  margin-top: 22px;
+  width: 100%;
+  color: #140b05;
+  background: linear-gradient(135deg, #facc15, #fb923c);
+}
+
+.ceo-download-btn {
+  color: #140b05;
+  background: linear-gradient(135deg, #facc15, #fb923c);
+}
+
+.ceo-secondary-btn {
+  color: #fff7ed;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.22);
+}
+
+.ceo-running-card,
+.ceo-success-card,
+.ceo-cost-card,
+.ceo-log-card {
+  margin-top: 22px;
+  padding: 24px;
+}
+
+.ceo-running-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ceo-running-top strong {
+  font-size: 34px;
+  color: #facc15;
+}
+
+.ceo-progress-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.18);
+  overflow: hidden;
+  margin: 18px 0;
+}
+
+.ceo-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f97316, #facc15);
+  transition: width 0.3s ease;
+}
+
+.ceo-runtime-grid,
+.ceo-result-grid,
+.ceo-cost-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.ceo-cost-grid {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.ceo-runtime-grid div,
+.ceo-result-grid div,
+.ceo-cost-grid div {
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.66);
+  border: 1px solid rgba(251, 191, 36, 0.12);
+}
+
+.ceo-runtime-grid span,
+.ceo-result-grid span {
+  color: #fed7aa;
+  font-size: 13px;
+}
+
+.ceo-runtime-grid strong,
+.ceo-result-grid strong,
+.ceo-cost-grid h4 {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
+  color: #ffffff;
+}
+
+.ceo-cost-grid p {
+  margin: 8px 0 0;
+  color: #fed7aa;
+  font-size: 13px;
+}
+
+.ceo-complete-icon {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #22c55e, #facc15);
+  color: #ffffff;
+  font-size: 34px;
+  font-weight: 900;
+  margin-bottom: 14px;
+}
+
+.ceo-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+}
+
+.ceo-log-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ceo-log-list div {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(251, 191, 36, 0.12);
+}
+
+.ceo-log-list span {
+  color: #facc15;
+  font-weight: 700;
+}
+
+.ceo-log-list p {
+  margin: 0;
+  color: #ffedd5;
+}
+
+@media (max-width: 900px) {
+  .ceo-info-grid,
+  .ceo-form-grid,
+  .ceo-runtime-grid,
+  .ceo-result-grid,
+  .ceo-cost-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .ceo-info-grid,
+  .ceo-form-grid,
+  .ceo-runtime-grid,
+  .ceo-result-grid,
+  .ceo-cost-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ceo-file-list div,
+  .ceo-log-list div {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+.ceo-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.ceo-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+  font-size: 14px;
+}
+
+.ceo-table th {
+  text-align: left;
+  padding: 14px 16px;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 700;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.ceo-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #111827;
+  vertical-align: top;
+}
+
+.ceo-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ceo-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ceo-pill.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.ceo-pill.danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.ceo-table-note {
+  margin: 12px 16px 16px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.ceo-badge {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: #ffffff;
+}
+
+.ceo-upload-icon {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: #ffffff;
+  border-radius: 16px;
+  padding: 12px 16px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}

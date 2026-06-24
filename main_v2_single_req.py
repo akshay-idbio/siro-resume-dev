@@ -19,8 +19,6 @@ from pydantic import BaseModel
 from config import Settings, get_settings
 import asyncio
 import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 
 # =========================================================
@@ -266,69 +264,6 @@ def safe_number(value, default=0):
         return float(value)
     except Exception:
         return default
-    
-    
-    
-def select_relevant_matches_or_best_one(matches: list) -> list:
-    """
-    Business rule for Option 2:
-    - If candidate fits multiple jobs, return all relevant matches.
-    - If candidate fits nothing, return only the closest/best one.
-    - Do not show all Not Suitable rows.
-    """
-
-    if not matches:
-        return []
-
-    cleaned_matches = []
-
-    for match in matches:
-        if not isinstance(match, dict):
-            continue
-
-        ats = safe_number(match.get("ats_score"))
-        verdict = clean_cell(match.get("verdict"))
-        final_remark = clean_cell(match.get("final_remark"))
-
-        match["ats_score"] = ats
-        match["verdict"] = verdict or "Not Suitable"
-        match["final_remark"] = final_remark or "Not Suitable"
-        match["call_status"] = ""
-
-        cleaned_matches.append(match)
-
-    if not cleaned_matches:
-        return []
-
-    # Sort highest ATS first
-    cleaned_matches = sorted(
-        cleaned_matches,
-        key=lambda x: safe_number(x.get("ats_score")),
-        reverse=True,
-    )
-
-    relevant_matches = []
-
-    for match in cleaned_matches:
-        ats = safe_number(match.get("ats_score"))
-        verdict = clean_cell(match.get("verdict"))
-        final_remark = clean_cell(match.get("final_remark"))
-
-        is_relevant = (
-            ats >= 50
-            and verdict != "Not Suitable"
-            and final_remark != "Not Suitable"
-        )
-
-        if is_relevant:
-            relevant_matches.append(match)
-
-    # If candidate fits one or more jobs, show all relevant jobs only
-    if relevant_matches:
-        return relevant_matches
-
-    # If candidate fits nothing, show only the closest/best one
-    return [cleaned_matches[0]]
 
 
 def clamp_int(value, min_value=0, max_value=100) -> int:
@@ -364,100 +299,11 @@ def calculate_ats_from_breakdown(result: dict) -> int:
     return clamp_int(final_ats, 0, 100)
 
 
-ALLOWED_RESUME_EXTENSIONS = [".pdf", ".docx", ".doc"]
+def is_pdf_upload(file: UploadFile) -> bool:
+    filename = (file.filename or "").lower()
+    content_type = (file.content_type or "").lower()
 
-
-def get_file_extension(filename: str) -> str:
-    filename = filename or ""
-    return os.path.splitext(filename.lower())[1]
-
-
-def is_supported_resume_upload(file: UploadFile) -> bool:
-    filename = file.filename or ""
-    ext = get_file_extension(filename)
-    return ext in ALLOWED_RESUME_EXTENSIONS
-
-
-
-def convert_office_file_to_pdf_bytes(file_bytes: bytes, original_filename: str) -> bytes:
-    """
-    Converts DOC/DOCX to PDF using LibreOffice headless inside Linux/Docker.
-    Returns converted PDF bytes.
-    """
-
-    original_filename = os.path.basename(original_filename or "resume.docx")
-    ext = get_file_extension(original_filename)
-
-    if ext not in [".docx", ".doc"]:
-        raise ValueError(f"Unsupported office file extension for conversion: {ext}")
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        input_path = os.path.join(temp_dir, original_filename)
-
-        with open(input_path, "wb") as f:
-            f.write(file_bytes)
-
-        command = [
-            "libreoffice",
-            "--headless",
-            "--nologo",
-            "--nofirststartwizard",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            temp_dir,
-            input_path,
-        ]
-
-        result = subprocess.run(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=120,
-        )
-
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"LibreOffice conversion failed. stdout={result.stdout}, stderr={result.stderr}"
-            )
-
-        expected_pdf_name = os.path.splitext(original_filename)[0] + ".pdf"
-        expected_pdf_path = os.path.join(temp_dir, expected_pdf_name)
-
-        if not os.path.exists(expected_pdf_path):
-            pdf_files = [
-                f for f in os.listdir(temp_dir)
-                if f.lower().endswith(".pdf")
-            ]
-
-            if not pdf_files:
-                raise RuntimeError(
-                    f"PDF conversion failed. No PDF created. stdout={result.stdout}, stderr={result.stderr}"
-                )
-
-            expected_pdf_path = os.path.join(temp_dir, pdf_files[0])
-
-        with open(expected_pdf_path, "rb") as f:
-            return f.read()
-
-
-def get_pdf_bytes_from_resume_upload(file_bytes: bytes, original_filename: str) -> bytes:
-    """
-    Normalizes resume upload into PDF bytes.
-    PDF stays direct.
-    DOC/DOCX gets converted to PDF.
-    """
-
-    ext = get_file_extension(original_filename)
-
-    if ext == ".pdf":
-        return file_bytes
-
-    if ext in [".docx", ".doc"]:
-        return convert_office_file_to_pdf_bytes(file_bytes, original_filename)
-
-    raise ValueError(f"Unsupported resume file type: {ext}")
+    return filename.endswith(".pdf") or content_type == "application/pdf"
 
 
 def clean_json_text(raw: str) -> dict:
@@ -1351,219 +1197,6 @@ Return only valid JSON:
     return result
 
 
-
-def call_claude_relevant_requirement_matches(
-    candidate_info: dict,
-    shortlisted_requirements: list,
-    cfg: Settings,
-) -> dict:
-    debug("Claude relevant requirement matching started")
-
-    client = get_claude_client(cfg)
-
-    requirements_for_prompt = [
-        requirement_for_prompt(row) for row in shortlisted_requirements
-    ]
-
-    prompt = f"""
-You are an expert technical recruiter.
-
-You are given:
-1. One candidate profile extracted from resume.
-2. A shortlisted list of job requirements from Requirement Sheet.
-
-Your task:
-- Evaluate the candidate against every shortlisted Request-ID/job requirement.
-- Return all relevant matching Request-IDs/job requirements for the candidate.
-- If no requirement is a good fit, return the closest Request-ID but mark final_remark as "Not Suitable".
-- Generate ATS score from 0 to 100 based on overall recruiter judgment for each returned requirement.
-- Generate recruiter-style verdict, call_status and remark for each returned requirement.
-
-Important:
-- Use ONLY the provided requirements.
-- Do not invent Request-ID.
-- A candidate can be mapped to multiple requirements when relevant.
-- Return one match object per relevant Request-ID.
-- NPU means Not Picked Up. It cannot be detected from resume. Do not set NPU unless input clearly says call status is NPU.
-- Use High CTC only if candidate CTC is available and exceeds requirement budget.
-- Use High Notice Period only if notice period is available and clearly high.
-- Use Location Mismatch if location is main issue.
-- Use Skill mismatch if skill gap is main issue.
-- Use Exp mismatch if experience is main issue.
-- Use Match only when candidate is a strong/clear fit.
-- Use Not Suitable when profile/domain is not aligned.
-- call_status must always be empty string "" because call status is recruiter-entered manually after calling the candidate.
-
-Relevance rules:
-- Return all requirements that are relevant enough for recruiter review.
-- Relevant means the candidate has meaningful role, skill, experience, or domain overlap with the requirement.
-- Normally include matches with verdict "Possible Fit", "Good Fit", or "Strong Fit".
-- Do not return weak unrelated requirements just to increase rows.
-- If no requirement is relevant, return exactly one closest requirement as "Not Suitable" for tracking.
-
-ATS scoring guidance:
-- ATS must reflect overall match quality between the candidate and each selected requirement.
-- Do not give the same ATS score to every requirement unless their fit is genuinely almost identical.
-- Give lower score when profile/domain is weakly aligned.
-- Give medium score when candidate is partially aligned but has some important gaps.
-- Give higher score when candidate strongly matches experience, core skills, role focus, and location/availability where available.
-- Keep ATS realistic and recruiter-friendly.
-
-Location rules:
-- Compare candidate location with requirement location only when candidate_location_confidence is "high" or "medium".
-- Do not compare location if candidate_location_confidence is "low" or "not_found".
-- If candidate_location is null/blank/not_found, set location_mismatch = "Not Evaluated".
-- If location is not evaluated, do not use final_remark = "Location Mismatch".
-- Compare locations semantically and case-insensitively.
-- Ignore formatting differences, symbols, punctuation, country/state suffixes, office names, SEZ/branch/building names, and extra whitespace.
-- Treat equivalent city spellings or common regional names as same when clearly equivalent.
-- Do not infer candidate location from employer/work/education/project location.
-- In reason, if candidate location is missing, write:
-  "Candidate location is not explicitly mentioned in the resume, so location fit is not evaluated."
-
-Allowed verdict values:
-- Strong Fit
-- Good Fit
-- Possible Fit
-- Not Suitable
-
-Allowed final_remark values:
-- Exp mismatch
-- High CTC
-- High Notice Period
-- Location Mismatch
-- Match
-- Not Suitable
-- Skill mismatch
-
-Set experience_mismatch as "Yes" if candidate total experience is less than required experience, otherwise "No".
-Set skill_mismatch as "Yes" if candidate is missing important required skills, otherwise "No".
-Set location_mismatch as "Yes" only if candidate location is explicitly available and conflicts with requirement location.
-If candidate location is missing, set location_mismatch as "Not Evaluated".
-
-Candidate Profile:
-{json.dumps(candidate_info, ensure_ascii=False, indent=2)}
-
-Shortlisted Requirements:
-{json.dumps(requirements_for_prompt, ensure_ascii=False, indent=2)}
-
-Return only valid JSON:
-{{
-  "matches": [
-    {{
-      "request_id": null,
-      "ats_score": 0,
-      "verdict": "Not Suitable",
-      "call_status": "",
-      "final_remark": "Not Suitable",
-      "experience_mismatch": "No",
-      "skill_mismatch": "No",
-      "location_mismatch": "Not Evaluated",
-      "matching_skills": [],
-      "missing_skills": [],
-      "reason": ""
-    }}
-  ]
-}}
-"""
-
-    message = client.messages.create(
-        model=cfg.claude_model,
-        max_tokens=cfg.max_tokens,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt,
-                    }
-                ],
-            }
-        ],
-    )
-
-    raw = message.content[0].text.strip()
-
-    usage = getattr(message, "usage", None)
-    input_tokens = getattr(usage, "input_tokens", 0) if usage else 0
-    output_tokens = getattr(usage, "output_tokens", 0) if usage else 0
-
-    try:
-        result = clean_json_text(raw)
-    except Exception as e:
-        debug(f"Multi match JSON parse failed: {repr(e)}")
-        result = {"matches": []}
-
-    matches = result.get("matches")
-    if not isinstance(matches, list):
-        matches = []
-
-    cleaned_matches = []
-
-    for match in matches:
-        if not isinstance(match, dict):
-            continue
-
-        # Always keep call status blank. Recruiter will fill this manually.
-        match["call_status"] = ""
-
-        request_id = clean_cell(match.get("request_id")) or clean_cell(
-            match.get("best_request_id")
-        )
-        match["request_id"] = request_id
-        match["best_request_id"] = request_id
-
-        final_remark = clean_cell(match.get("final_remark"))
-        if final_remark not in VALID_REMARKS:
-            final_remark = "Not Suitable"
-        match["final_remark"] = final_remark
-
-        ats = safe_number(match.get("ats_score"))
-
-        # Keep verdict aligned with ATS, but do not force ATS itself.
-        if ats >= 85:
-            verdict = "Strong Fit"
-        elif ats >= 70:
-            verdict = "Good Fit"
-        elif ats >= 50:
-            verdict = "Possible Fit"
-        else:
-            verdict = "Not Suitable"
-
-        match["verdict"] = verdict
-
-        # Safety: if candidate location is missing, never allow Location Mismatch.
-        candidate_city = clean_cell(candidate_info.get("candidate_city"))
-        candidate_location = clean_cell(candidate_info.get("candidate_location"))
-
-        if not candidate_city and not candidate_location:
-            if match.get("final_remark") == "Location Mismatch":
-                match["final_remark"] = "Not Suitable"
-
-            match["location_mismatch"] = "Not Evaluated"
-
-            reason = clean_cell(match.get("reason"))
-            if "location fit is not evaluated" not in reason.lower():
-                match["reason"] = (
-                    reason
-                    + " Candidate location is not explicitly mentioned in the resume, so location fit is not evaluated."
-                ).strip()
-
-        cleaned_matches.append(match)
-
-    result["matches"] = cleaned_matches
-
-    debug("Claude relevant requirement matching completed")
-
-    result["_token_usage"] = {
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": input_tokens + output_tokens,
-    }
-
-    return result
-
 # =========================================================
 # OUTPUT ROW BUILDERS
 # =========================================================
@@ -1969,7 +1602,7 @@ def root():
         "usage": {
             "list_jobs": "GET /jobs",
             "get_job": "GET /jobs/{request_id}",
-            "bulk_analyze": "POST /bulk-analyze with multiple PDF resume files; each resume maps to all relevant requirements",
+            "bulk_analyze": "POST /bulk-analyze with multiple PDF resume files",
             "download": "GET /download/{filename}",
         },
     }
@@ -2279,7 +1912,6 @@ async def run_bulk_analyze_background_job(
                     "input_tokens": resume_input_tokens,
                     "output_tokens": resume_output_tokens,
                     "total_tokens": resume_total_tokens,
-                    "matched_requirements_count": result.get("matched_requirements_count", 0),
                 }
 
                 if result["status"] == "skipped":
@@ -2322,17 +1954,10 @@ async def run_bulk_analyze_background_job(
                     write_status(status)
                     continue
 
-                result_output_rows = result.get("output_rows")
-                result_tracker_rows = result.get("tracker_rows")
-
-                if result_output_rows is not None:
-                    output_rows.extend(result_output_rows)
-                elif result.get("output_row"):
+                if result.get("output_row"):
                     output_rows.append(result["output_row"])
 
-                if result_tracker_rows is not None:
-                    tracker_rows.extend(result_tracker_rows)
-                elif result.get("tracker_row"):
+                if result.get("tracker_row"):
                     tracker_rows.append(result["tracker_row"])
 
                 status = read_status()
@@ -2604,6 +2229,7 @@ def get_job(request_id: str, cfg: Settings = Depends(get_settings)):
         "requirement": requirement,
     }
 
+
 async def process_single_resume_file(
     file: UploadFile,
     requirements_df: pd.DataFrame,
@@ -2621,77 +2247,35 @@ async def process_single_resume_file(
         "total_tokens": 0,
     }
 
-    if not is_supported_resume_upload(file):
+    if not is_pdf_upload(file):
         return {
             "status": "skipped",
-            "filename": file.filename or "unsupported_file",
-            "output_rows": [],
-            "tracker_rows": [],
+            "filename": file.filename or "unknown_file",
             "output_row": None,
             "tracker_row": None,
             "token_usage": zero_token_usage,
         }
 
-    original_file_bytes = await file.read()
+    pdf_bytes = await file.read()
 
-    if not original_file_bytes:
+    if not pdf_bytes:
         return {
             "status": "skipped",
             "filename": file.filename or "empty_file",
-            "output_rows": [],
-            "tracker_rows": [],
             "output_row": None,
             "tracker_row": None,
             "token_usage": zero_token_usage,
         }
 
-    if len(original_file_bytes) > cfg.max_pdf_size_mb * 1024 * 1024:
+    if len(pdf_bytes) > cfg.max_pdf_size_mb * 1024 * 1024:
         return {
             "status": "skipped",
             "filename": file.filename or "large_file",
-            "output_rows": [],
-            "tracker_rows": [],
             "output_row": None,
             "tracker_row": None,
             "token_usage": zero_token_usage,
         }
 
-    try:
-        pdf_bytes = get_pdf_bytes_from_resume_upload(
-            file_bytes=original_file_bytes,
-            original_filename=file.filename or "resume.pdf",
-        )
-    except Exception as e:
-        debug(f"Resume conversion failed for {file.filename}: {repr(e)}")
-
-        error_output_row = {col: "" for col in OUTPUT_COLUMNS}
-        error_output_row["CV File Name"] = file.filename or "resume"
-        error_output_row["Candidate Name"] = file.filename or "resume"
-        error_output_row["ATS"] = "0"
-        error_output_row["Experience Mismatch"] = "No"
-        error_output_row["Skill Mismatch"] = "No"
-        error_output_row["Remark"] = f"Resume conversion failed: {str(e)}"
-
-        tracker_row = {
-            "Date": datetime.now().strftime("%d-%m-%Y"),
-            "Request ID": "",
-            "Status": "",
-            "Skills": "",
-            "Candidate": file.filename or "resume",
-            "Verdict": "Not Suitable",
-            "Call Status": "",
-            "Remarks": "Not Suitable",
-        }
-
-        return {
-            "status": "processed",
-            "filename": file.filename or "resume",
-            "output_rows": [error_output_row],
-            "tracker_rows": [tracker_row],
-            "output_row": error_output_row,
-            "tracker_row": tracker_row,
-            "token_usage": zero_token_usage,
-        }
     try:
         # ------------------------------------------------------------
         # STEP 1: Extract candidate information from resume using Claude
@@ -2706,12 +2290,18 @@ async def process_single_resume_file(
         # ------------------------------------------------------------
         # STEP 2: Candidate location safety cleanup
         # ------------------------------------------------------------
+        # This prevents wrong output like:
+        # company location / work location / project location / education location
+        # being used as candidate's actual location.
         if is_likely_company_location(candidate_info):
             candidate_info["candidate_location"] = None
             candidate_info["candidate_city"] = None
             candidate_info["candidate_state"] = None
             candidate_info["candidate_country"] = None
 
+        # This is generic safety check.
+        # If Claude itself says location confidence is low/not_found,
+        # then we keep candidate location blank.
         location_confidence = clean_cell(
             candidate_info.get("candidate_location_confidence")
         ).lower()
@@ -2723,24 +2313,27 @@ async def process_single_resume_file(
             candidate_info["candidate_country"] = None
 
         # ------------------------------------------------------------
-        # STEP 3: Python shortlist top 25 requirements
+        # STEP 3: Python shortlisting from requirement sheet
         # ------------------------------------------------------------
         shortlisted_requirements = shortlist_requirements(
             requirements_df=requirements_df,
             candidate_info=candidate_info,
-            top_n=25,
+            top_n=10,
         )
 
         # ------------------------------------------------------------
-        # STEP 4: Claude returns all relevant requirement matches
+        # STEP 4: Claude selects best requirement from shortlisted rows
         # ------------------------------------------------------------
         match_result = await asyncio.to_thread(
-            call_claude_relevant_requirement_matches,
+            call_claude_best_requirement_match,
             candidate_info,
             shortlisted_requirements,
             cfg,
         )
 
+        # ------------------------------------------------------------
+        # STEP 5: Token usage calculation
+        # ------------------------------------------------------------
         candidate_usage = candidate_info.get("_token_usage", {})
         match_usage = match_result.get("_token_usage", {})
 
@@ -2753,110 +2346,57 @@ async def process_single_resume_file(
             + int(match_usage.get("total_tokens", 0)),
         }
 
-        raw_matches = match_result.get("matches", [])
-
-        if not isinstance(raw_matches, list):
-            raw_matches = []
-
         # ------------------------------------------------------------
-        # STEP 5: Apply business rule
-        # - show all relevant matches
-        # - if nothing relevant, show only closest/best one
+        # STEP 6: Find selected requirement row
         # ------------------------------------------------------------
-        selected_matches = select_relevant_matches_or_best_one(raw_matches)
+        best_request_id = clean_cell(match_result.get("best_request_id"))
 
-        output_rows = []
-        tracker_rows = []
+        req = find_requirement_by_request_id(
+            requirements_df=requirements_df,
+            request_id=best_request_id,
+        )
 
-        # ------------------------------------------------------------
-        # STEP 6: Build rows for selected matches only
-        # ------------------------------------------------------------
-        for match in selected_matches:
-            request_id = (
-                clean_cell(match.get("best_request_id"))
-                or clean_cell(match.get("request_id"))
-                or clean_cell(match.get("Request-ID"))
-            )
-
-            req = find_requirement_by_request_id(
-                requirements_df=requirements_df,
-                request_id=request_id,
-            )
-
-            if not req:
-                continue
-
-            # Keep compatibility with existing row builders
-            match["best_request_id"] = clean_cell(req.get("Request-ID"))
-            match["call_status"] = ""
-
-            output_rows.append(
-                build_output_row(
-                    req=req,
-                    candidate_info=candidate_info,
-                    match_result=match,
-                    filename=file.filename or "resume.pdf",
-                )
-            )
-
-            tracker_rows.append(
-                build_tracker_row(
-                    req=req,
-                    candidate_info=candidate_info,
-                    match_result=match,
-                    filename=file.filename or "resume.pdf",
-                )
-            )
-
-        # ------------------------------------------------------------
-        # STEP 7: Fallback if Claude returned nothing usable
-        # ------------------------------------------------------------
-        if not output_rows and shortlisted_requirements:
+        # Fallback if Claude does not return valid Request-ID
+        if not req and shortlisted_requirements:
             req = shortlisted_requirements[0]
-
-            fallback_match = {
-                "best_request_id": clean_cell(req.get("Request-ID")),
-                "ats_score": 0,
-                "verdict": "Not Suitable",
-                "call_status": "",
-                "final_remark": "Not Suitable",
-                "experience_mismatch": "No",
-                "skill_mismatch": "No",
-                "location_mismatch": "Not Evaluated",
-                "matching_skills": [],
-                "missing_skills": [],
-                "reason": (
-                    "No relevant requirement match returned by AI. "
-                    "Closest requirement selected as fallback, but candidate marked Not Suitable."
-                ),
-            }
-
-            output_rows.append(
-                build_output_row(
-                    req=req,
-                    candidate_info=candidate_info,
-                    match_result=fallback_match,
-                    filename=file.filename or "resume.pdf",
-                )
+            match_result["best_request_id"] = clean_cell(req.get("Request-ID"))
+            match_result["final_remark"] = "Not Suitable"
+            match_result["verdict"] = "Not Suitable"
+            match_result["ats_score"] = 0
+            match_result["experience_mismatch"] = "No"
+            match_result["skill_mismatch"] = "No"
+            match_result["location_mismatch"] = "Not Evaluated"
+            match_result["reason"] = (
+                "No confident matching Request-ID returned by AI. "
+                "Closest requirement selected as fallback, but candidate marked Not Suitable."
             )
 
-            tracker_rows.append(
-                build_tracker_row(
-                    req=req,
-                    candidate_info=candidate_info,
-                    match_result=fallback_match,
-                    filename=file.filename or "resume.pdf",
-                )
-            )
+        # If still no requirement found, avoid crash
+        if not req:
+            req = {}
+
+        # ------------------------------------------------------------
+        # STEP 7: Build output rows
+        # ------------------------------------------------------------
+        output_row = build_output_row(
+            req=req,
+            candidate_info=candidate_info,
+            match_result=match_result,
+            filename=file.filename or "resume.pdf",
+        )
+
+        tracker_row = build_tracker_row(
+            req=req,
+            candidate_info=candidate_info,
+            match_result=match_result,
+            filename=file.filename or "resume.pdf",
+        )
 
         return {
             "status": "processed",
             "filename": file.filename or "resume.pdf",
-            "output_rows": output_rows,
-            "tracker_rows": tracker_rows,
-            # compatibility keys
-            "output_row": output_rows[0] if output_rows else None,
-            "tracker_row": tracker_rows[0] if tracker_rows else None,
+            "output_row": output_row,
+            "tracker_row": tracker_row,
             "token_usage": token_usage,
         }
 
@@ -2887,13 +2427,10 @@ async def process_single_resume_file(
         return {
             "status": "processed",
             "filename": candidate_name,
-            "output_rows": [error_output_row],
-            "tracker_rows": [tracker_row],
             "output_row": error_output_row,
             "tracker_row": tracker_row,
             "token_usage": zero_token_usage,
         }
-
 
 
 @app.post("/bulk-analyze", response_model=BulkAnalyzeResponse)
@@ -2921,7 +2458,8 @@ async def bulk_analyze_resumes(
     if requirements_df.empty:
         raise HTTPException(status_code=400, detail="Requirement sheet has no rows")
 
-    # Keep one-by-one for Claude rate-limit safety.
+    # Limit parallel Claude calls for safety.
+    # For demo keep 2 or 3. Do not set very high.
     semaphore = asyncio.Semaphore(1)
 
     async def limited_process(file, index):
@@ -2958,20 +2496,10 @@ async def bulk_analyze_resumes(
             skipped_files.append(result["filename"])
             continue
 
-        # IMPORTANT:
-        # New max-fit logic returns multiple output rows per resume.
-        # So we must use extend(), not append().
-        result_output_rows = result.get("output_rows")
-        result_tracker_rows = result.get("tracker_rows")
-
-        if result_output_rows is not None:
-            output_rows.extend(result_output_rows)
-        elif result.get("output_row"):
+        if result["output_row"]:
             output_rows.append(result["output_row"])
 
-        if result_tracker_rows is not None:
-            tracker_rows.extend(result_tracker_rows)
-        elif result.get("tracker_row"):
+        if result["tracker_row"]:
             tracker_rows.append(result["tracker_row"])
 
         processed_count += 1
@@ -3009,6 +2537,7 @@ async def bulk_analyze_resumes(
             "total_tokens": total_tokens,
         },
     )
+
 
 @app.get("/download/{filename}")
 def download_output_file(filename: str):

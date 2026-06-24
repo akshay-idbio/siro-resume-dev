@@ -23,6 +23,23 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         extra = "ignore"
+        
+    lowcost_claude_model: str = "claude-haiku-4-5-20251001"
+
+    lowcost_requirement_excel_path: str = "input/uploaded_requirement.xlsx"
+
+    lowcost_top_requirements: int = 7
+    lowcost_max_matches_per_resume: int = 3
+
+    lowcost_max_resume_chars: int = 6000
+    lowcost_max_jd_chars: int = 700
+    lowcost_max_output_tokens: int = 1400
+
+    lowcost_max_parallel: int = 8
+
+    lowcost_input_rate_per_million_usd: float = 1.0
+    lowcost_output_rate_per_million_usd: float = 5.0
+    lowcost_usd_to_inr: float = 95.4
 
 
 @lru_cache

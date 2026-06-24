@@ -16,3 +16,6 @@ main_old_single_resume_api.py
 frontend/b.py
 /input
 /frontend_old
+*.pdf
+*.docx
+*.doc

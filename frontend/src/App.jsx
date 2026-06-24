@@ -2,6 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import BulkAnalyze from "./pages/BulkAnalyze";
+import HybridAnalyze from "./pages/HybridAnalyze";
+import LowCostAnalyze from "./pages/LowCostAnalyze";
+import CeoAnalyze from "./pages/CeoAnalyze";
 
 function ProtectedRoute({ children }) {
   const isLoggedIn = localStorage.getItem("siro_logged_in") === "true";
@@ -32,6 +35,33 @@ export default function App() {
         element={
           <ProtectedRoute>
             <BulkAnalyze />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/hybrid-analyze"
+        element={
+          <ProtectedRoute>
+            <HybridAnalyze />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/lowcost-analyze"
+        element={
+          <ProtectedRoute>
+            <LowCostAnalyze />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/ceo-analyze"
+        element={
+          <ProtectedRoute>
+            <CeoAnalyze />
           </ProtectedRoute>
         }
       />

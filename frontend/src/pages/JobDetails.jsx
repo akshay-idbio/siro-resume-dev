@@ -241,10 +241,18 @@ export default function JobDetails() {
                                 </p>
 
                                 <label className="upload-box">
-                                    <input
+                                    {/* <input
                                         type="file"
                                         accept="application/pdf"
                                         onChange={handleFileChange}
+                                    /> */}
+
+                                    <input
+                                    type="file"
+                                    multiple
+                                    webkitdirectory="true"
+                                    accept=".pdf,.doc,.docx"
+                                    onChange={handleFileChange}
                                     />
                                     <div className="upload-icon">📄</div>
                                     <strong>
