@@ -8,3 +8,5 @@ anthropic
 pydantic
 pydantic-settings
 PyMuPDF
+pypdf
+python-docx

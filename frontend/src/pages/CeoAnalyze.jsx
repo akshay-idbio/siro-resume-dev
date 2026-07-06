@@ -322,7 +322,7 @@ export default function CeoAnalyze() {
     <div className="ceo-page">
       <header className="ceo-header">
         <button className="ceo-back-btn" onClick={() => navigate("/")}>
-          � Back
+          Back
         </button>
 
         <div className="ceo-badge">CEO Text Optimized Pipeline</div>
@@ -341,7 +341,7 @@ export default function CeoAnalyze() {
           <div className="ceo-info-card">
             <span>Mode</span>
             <strong>Text Optimized</strong>
-            <p>PDF/DOCX � TXT � Claude</p>
+            <p>PDF/DOCX  TXT  Claude</p>
           </div>
 
           <div className="ceo-info-card">
@@ -598,7 +598,7 @@ export default function CeoAnalyze() {
               </div>
 
               <div>
-                <h4>�{Number(totalEstimatedTextCost || 0).toFixed(4)}</h4>
+                <h4>{Number(totalEstimatedTextCost || 0).toFixed(4)}</h4>
                 <p>Estimated TXT Input Cost</p>
               </div>
 
@@ -613,7 +613,7 @@ export default function CeoAnalyze() {
                     costRows.filter((row) => row.over_budget_estimate).length
                   }
                 </h4>
-                <p>Over �0.30 Estimate</p>
+                <p>Over 0.30 Estimate</p>
               </div>
             </div>
 
@@ -635,7 +635,7 @@ export default function CeoAnalyze() {
                         <td>{row.original_filename}</td>
                         <td>{row.text_filename || "-"}</td>
                         <td>{Number(row.estimated_input_tokens || 0).toLocaleString()}</td>
-                        <td>�{Number(row.estimated_input_cost_inr || 0).toFixed(4)}</td>
+                        <td>{Number(row.estimated_input_cost_inr || 0).toFixed(4)}</td>
                         <td>
                           {row.over_budget_estimate ? (
                             <span className="ceo-pill danger">Over Budget</span>
@@ -687,14 +687,14 @@ export default function CeoAnalyze() {
 
               <div>
                 <h4>
-                  �{Number(tokenCost.cost_inr || tokenCost.total_cost_inr || 0).toFixed(2)}
+                  {Number(tokenCost.cost_inr || tokenCost.total_cost_inr || 0).toFixed(2)}
                 </h4>
                 <p>Estimated INR</p>
               </div>
 
               <div>
                 <h4>
-                  �{Number(tokenCost.cost_per_resume_inr || 0).toFixed(2)}
+                  {Number(tokenCost.cost_per_resume_inr || 0).toFixed(2)}
                 </h4>
                 <p>Cost / Resume</p>
               </div>
@@ -711,7 +711,7 @@ export default function CeoAnalyze() {
                 <div key={`${row.original_filename}-${index}`}>
                   <span>{row.status}</span>
                   <p>
-                    {row.original_filename} � {row.text_filename || row.error || "-"}
+                    {row.original_filename}  {row.text_filename || row.error || "-"}
                   </p>
                 </div>
               ))}

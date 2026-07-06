@@ -28,46 +28,81 @@ export default function Login() {
 
   return (
     <div className="login-page">
-      <div className="login-card">
-        <div className="login-brand">
-          <div className="brand-orb">AI</div>
-          <h1>{config.COMPANY_NAME}</h1>
-          <p>{config.COMPANY_SUBTITLE}</p>
-        </div>
+      <div className="shape shape-one" />
+      <div className="shape shape-two" />
+      <div className="shape shape-three" />
 
-       
-            <form onSubmit={handleLogin} className="login-form" autoComplete="off">
-          <label>Username</label>
-          <input
-  type="text"
-  placeholder="Enter username"
-  value={username}
-  autoComplete="off"
-  name="siro_username"
-  onChange={(e) => setUsername(e.target.value)}
-/>
-<label>Password</label>
-<input
-  type="password"
-  placeholder="Enter password"
-  value={password}
-  autoComplete="new-password"
-  name="siro_password"
-  onChange={(e) => setPassword(e.target.value)}
-/>
+      <main className="login-shell">
+        <section className="login-visual">
+          <div className="visual-overlay" />
 
-          
-          
+          <div className="visual-content">
+            <span className="eyebrow">AI RESUME INTELLIGENCE</span>
 
-          {error && <div className="login-error">{error}</div>}
+            <h1>
+              Screen faster.
+              <br />
+              Shortlist smarter.
+            </h1>
 
-          <button className="primary-button" type="submit">
-            Login
-          </button>
-        </form>
+            <p>
+              Compare resumes with job requirements using AI-powered screening,
+              ATS scoring, cost tracking, and recruiter-ready Excel output.
+            </p>
 
-        
-      </div>
+            <div className="visual-actions">
+              <span>Talent Intelligence</span>
+              <span>Precision Matching</span>
+              <span>Decision Reports</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="login-panel">
+          <div className="login-brand">
+            <div className="brand-mark">AI</div>
+
+            <h2>{config.COMPANY_NAME}</h2>
+            <p>{config.COMPANY_SUBTITLE}</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="login-form" autoComplete="off">
+            <div className="form-group">
+              <label>Username</label>
+              <input
+                type="text"
+                placeholder="Enter username"
+                value={username}
+                autoComplete="off"
+                name="siro_username"
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Password</label>
+              <input
+                type="password"
+                placeholder="Enter password"
+                value={password}
+                autoComplete="new-password"
+                name="siro_password"
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+
+            {error && <div className="login-error">{error}</div>}
+
+            <button type="submit" className="login-button">
+              Login to Dashboard
+            </button>
+          </form>
+
+          <div className="login-footer">
+            Secure internal access for recruiters and screening teams.
+          </div>
+        </section>
+      </main>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import json
 import time
 import uuid
 import asyncio
-import shutil
+import shutil,threading
 import subprocess
 import tempfile
 from pathlib import Path
@@ -2053,7 +2053,10 @@ async def hybrid_start_bulk_analyze(
 
     write_status(status)
 
-    asyncio.create_task(run_hybrid_background_job(job_id, saved_files, cfg))
+    threading.Thread(
+        target=lambda: asyncio.run(run_hybrid_background_job(job_id, saved_files, cfg)),
+        daemon=True,
+    ).start()
 
     return {
         "job_id": job_id,

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getJobs } from "../api/api";
 import config from "../config";
-import AiLoader from "../components/AiLoader";
 import "./Home.css";
 
 export default function Home() {
@@ -10,6 +9,7 @@ export default function Home() {
 
   const requirementInputRef = useRef(null);
   const folderInputRef = useRef(null);
+  const pollIntervalRef = useRef(null);
 
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -34,8 +34,6 @@ export default function Home() {
     output_tokens: 0,
     total_tokens: 0,
   });
-
-  const pollIntervalRef = useRef(null);
 
   const [bulkStatus, setBulkStatus] = useState({
     job_id: "",
@@ -71,6 +69,20 @@ export default function Home() {
   const [resumeLogs, setResumeLogs] = useState([]);
 
   useEffect(() => {
+    // Fresh login/open should NOT auto-load old backend requirement.
+    // Requirement should appear only after user uploads in this browser session.
+    const requirementReady = sessionStorage.getItem("siro_requirement_ready") === "true";
+    const savedRequirementFile = sessionStorage.getItem("siro_requirement_file_name") || "";
+
+    if (requirementReady) {
+      setRequirementFileName(savedRequirementFile);
+      loadJobs();
+    } else {
+      setJobs([]);
+      setRequirementUploaded(false);
+      setRequirementFileName("");
+    }
+
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
@@ -103,18 +115,6 @@ export default function Home() {
     }
   };
 
-  // useEffect(() => {
-  //   loadJobs();
-  // }, []);
-
-  useEffect(() => {
-    // Do not auto-load old/backend requirement file on page start.
-    // User must upload Requirement Excel manually every time.
-    setJobs([]);
-    setRequirementUploaded(false);
-    setRequirementFileName("");
-  }, []);
-
   const resetAnalysisState = () => {
     setSelectedFiles([]);
     setProcessed(false);
@@ -122,12 +122,14 @@ export default function Home() {
     setDownloadUrl("");
     setProcessedCount(0);
     setSkippedFiles([]);
+    setError("");
+
     setTokenUsage({
       input_tokens: 0,
       output_tokens: 0,
       total_tokens: 0,
     });
-    setError("");
+
     setCostInfo({
       model_name: "",
       input_cost_usd: 0,
@@ -149,8 +151,33 @@ export default function Home() {
     setResumeLogs([]);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch(`${config.API_BASE_URL}/reset-requirement`, {
+        method: "POST",
+      });
+    } catch (err) {
+      console.error("Requirement reset failed:", err);
+    }
+
     localStorage.removeItem("siro_logged_in");
+    localStorage.removeItem("siro_requirement_file_name");
+
+    sessionStorage.removeItem("siro_requirement_ready");
+    sessionStorage.removeItem("siro_requirement_file_name");
+
+    localStorage.removeItem("uploadedRequirement");
+    localStorage.removeItem("requirementUploaded");
+    localStorage.removeItem("requirementFileName");
+    localStorage.removeItem("jobs");
+    localStorage.removeItem("selectedJob");
+    localStorage.removeItem("analysisState");
+
+    setJobs([]);
+    setRequirementUploaded(false);
+    setRequirementFileName("");
+    resetAnalysisState();
+
     navigate("/login");
   };
 
@@ -163,7 +190,6 @@ export default function Home() {
 
   const handleRequirementUpload = async (e) => {
     const file = e.target.files?.[0];
-
     if (!file) return;
 
     try {
@@ -196,11 +222,10 @@ export default function Home() {
         throw new Error(message);
       }
 
-      const result = await response.json();
-      console.log("Requirement upload result:", result);
-
       setRequirementUploaded(true);
       setRequirementFileName(file.name);
+
+      localStorage.setItem("siro_requirement_file_name", file.name);
 
       await loadJobs();
     } catch (err) {
@@ -235,7 +260,6 @@ export default function Home() {
 
   const handleFolderChange = async (e) => {
     const files = Array.from(e.target.files || []);
-
     if (!files.length) return;
 
     setSelectedFiles(files);
@@ -245,6 +269,7 @@ export default function Home() {
     setProcessedCount(0);
     setSkippedFiles([]);
     setError("");
+
     setTokenUsage({
       input_tokens: 0,
       output_tokens: 0,
@@ -268,7 +293,6 @@ export default function Home() {
         }
 
         const data = await response.json();
-        console.log("Bulk status:", data);
 
         setBulkStatus(data);
         setProcessedCount(data.processed || 0);
@@ -313,7 +337,6 @@ export default function Home() {
 
           setUploading(false);
           setProcessed(true);
-
           setOutputFile(data.output_filename || "");
 
           if (data.download_url) {
@@ -391,7 +414,6 @@ export default function Home() {
       }
 
       const result = await response.json();
-      console.log("Bulk job started:", result);
 
       setBulkStatus({
         job_id: result.job_id || "",
@@ -420,21 +442,26 @@ export default function Home() {
     String(job.Status || job.status || "").toLowerCase().includes("open")
   ).length;
 
-  const actionButtonText = uploading
-    ? "Analyzing Resumes..."
-    : processed
-      ? "Analyze More Resumes"
-      : "Upload Resume Folder & Start Matching";
+  const progressPercent =
+    bulkStatus.total > 0
+      ? Math.min(100, Math.round(((bulkStatus.processed || 0) / bulkStatus.total) * 100))
+      : 0;
 
   return (
-    <div className="page-shell">
-      {/* {uploading && <AiLoader />} */}
+    <div className="home-page">
+      <div className="home-bg-block block-one" />
+      <div className="home-bg-block block-two" />
+      <div className="home-bg-block block-three" />
 
       <header className="top-header">
-        <div>
-          <div className="app-badge">AI Recruitment Platform</div>
-          <h1>{config.COMPANY_NAME}</h1>
-          <p>{config.COMPANY_SUBTITLE}</p>
+        <div className="brand-area">
+          <div className="brand-logo">AI</div>
+
+          <div>
+            <span className="app-badge">Recruitment Intelligence</span>
+            <h1>{config.COMPANY_NAME}</h1>
+            <p>{config.COMPANY_SUBTITLE}</p>
+          </div>
         </div>
 
         <button className="logout-btn" onClick={handleLogout}>
@@ -443,116 +470,481 @@ export default function Home() {
       </header>
 
       <main className="main-container">
-        <section className="stats-grid">
-          <div className="stat-card">
-            <h2>{totalRequirements}</h2>
-            <p>Total Requirements</p>
-          </div>
+        <section className="home-shell">
+          <div className="hero-zone">
+            <div className="hero-copy">
+              <span className="hero-kicker">CLIENT SCREENING WORKSPACE</span>
 
-          <div className="stat-card">
-            <h2>{openPositions}</h2>
-            <p>Open Positions</p>
-          </div>
+              <h2>
+                Upload requirements.
+                <br />
+                Choose an AI engine.
+                <br />
+                Get the shortlist.
+              </h2>
 
-          <div className="stat-card">
-            <h2>{selectedFiles.length}</h2>
-            <p>Resumes Uploaded</p>
-          </div>
-        </section>
-
-        <section className="requirements-section top-requirements">
-          <div className="section-header">
-            <div>
-              <h2>Requirement Sheet</h2>
               <p>
-                Upload the latest client Requirement Excel first. Resume folder upload
-                will be enabled only after valid requirements are loaded.
+                A clean recruiter workspace to validate client requirements, run
+                resume screening through different AI engines, compare cost, and
+                generate final Excel output.
               </p>
 
+              <div className="hero-actions">
+                <input
+                  ref={requirementInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden-input"
+                  onChange={handleRequirementUpload}
+                />
+
+                <button
+                  className="primary-btn"
+                  onClick={openRequirementPicker}
+                  disabled={uploadingRequirement || uploading}
+                >
+                  {uploadingRequirement
+                    ? "Uploading requirement..."
+                    : requirementUploaded
+                      ? "Change requirement Excel"
+                      : "Upload requirement Excel"}
+                </button>
+
+
+              </div>
+
               {requirementFileName && (
-                <p className="upload-note">
-                  Requirement file uploaded: <strong>{requirementFileName}</strong>
+                <p className="file-note">
+                  Requirement loaded: <strong>{requirementFileName}</strong>
                 </p>
               )}
             </div>
 
-            <div className="requirement-actions">
-              <input
-                ref={requirementInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden-input"
-                onChange={handleRequirementUpload}
-              />
+            <div className="hero-status-card">
+              <div className="status-card-top">
+                <span>Screening Setup</span>
+                <b>{requirementUploaded ? "Ready" : "Waiting"}</b>
+              </div>
 
-              <button
-                className="primary-btn"
-                onClick={openRequirementPicker}
-                disabled={uploadingRequirement || uploading}
-              >
-                {uploadingRequirement
-                  ? "Uploading Requirement..."
-                  : requirementUploaded
-                    ? "Change Requirement Excel"
-                    : "Upload Requirement Excel"}
-              </button>
+              <div className="setup-list">
+                <div className={requirementUploaded ? "setup-item done" : "setup-item"}>
+                  <span>01</span>
+                  <div>
+                    <strong>Requirement Excel</strong>
+                    <p>{requirementUploaded ? "Uploaded and validated" : "Upload first"}</p>
+                  </div>
+                </div>
 
-              {/* {requirementUploaded && (
-                <button className="refresh-btn" onClick={loadJobs}>
-                  Refresh
-                </button>
-              )} */}
+                <div className={selectedFiles.length ? "setup-item done" : "setup-item"}>
+                  <span>02</span>
+                  <div>
+                    <strong>AI Engine</strong>
+                    <p>Main, Hybrid, or Low Cost</p>
+                  </div>
+                </div>
 
-              {requirementUploaded && jobs.length > 0 && (
-                <button
-                  className="refresh-btn"
-                  onClick={() => navigate("/hybrid-analyze")}
-                  disabled={uploadingRequirement || uploading}
-                >
-                  Run Hybrid Approach
-                </button>
-              )}
-
-              {requirementUploaded && jobs.length > 0 && (
-                <button
-                  className="refresh-btn"
-                  onClick={() => navigate("/lowcost-analyze")}
-                  disabled={uploadingRequirement || uploading}
-                >
-                  Run Low Cost Approach
-                </button>
-              )}
+                <div className={processed ? "setup-item done" : "setup-item"}>
+                  <span>03</span>
+                  <div>
+                    <strong>Excel Output</strong>
+                    <p>{processed ? "Report generated" : "Ready after screening"}</p>
+                  </div>
+                </div>
+              </div>
             </div>
-
-            {/* {requirementUploaded && jobs.length > 0 && (
-              <button
-                className="refresh-btn"
-                onClick={() => navigate("/ceo-analyze")}
-                disabled={uploadingRequirement || uploading}
-              >
-                Run CEO Original
-              </button>
-            )} */}
           </div>
 
-          {!requirementUploaded && !loading && (
-            <div className="empty-box">
-              No Requirement Excel uploaded yet. Please upload the client Requirement
-              Excel to continue.
+          <section className="stats-grid">
+            <div className="stat-card">
+              <span>Total Requirements</span>
+              <h3>{totalRequirements}</h3>
+              <p>Loaded from client Excel</p>
             </div>
+
+            <div className="stat-card">
+              <span>Open Positions</span>
+              <h3>{openPositions}</h3>
+              <p>Ready for matching</p>
+            </div>
+
+            <div className="stat-card">
+              <span>Resumes Selected</span>
+              <h3>{selectedFiles.length}</h3>
+              <p>Current screening batch</p>
+            </div>
+
+            <div className="stat-card">
+              <span>Estimated Cost</span>
+              <h3>{Number(costInfo.total_cost_inr || 0).toFixed(0)}</h3>
+              <p>Updated after processing</p>
+            </div>
+          </section>
+
+          <section className="section-card">
+            <div className="section-header">
+              <div>
+                <span className="section-label">STEP 1</span>
+                <h2>Requirement Sheet</h2>
+                <p>
+                  Upload the client requirement Excel. Once loaded, choose which AI
+                  engine should process the resumes.
+                </p>
+              </div>
+
+              <div className="section-actions">
+                <button
+                  className="primary-btn"
+                  onClick={openRequirementPicker}
+                  disabled={uploadingRequirement || uploading}
+                >
+                  {uploadingRequirement
+                    ? "Uploading..."
+                    : requirementUploaded
+                      ? "Change Excel"
+                      : "Upload Excel"}
+                </button>
+              </div>
+            </div>
+
+            {error && <div className="error-box">{error}</div>}
+
+            {!requirementUploaded && !loading && (
+              <div className="empty-box">
+                <h3>No requirement sheet uploaded yet</h3>
+                <p>
+                  Upload the client Requirement Excel to enable AI engine selection
+                  and resume screening.
+                </p>
+              </div>
+            )}
+
+            {loading && (
+              <div className="empty-box">
+                <h3>Loading requirements...</h3>
+                <p>Please wait while the requirement sheet is being validated.</p>
+              </div>
+            )}
+
+            {requirementUploaded && jobs.length > 0 && (
+              <>
+                <div className="engine-section">
+                  <div className="engine-heading">
+                    <span className="section-label">STEP 2</span>
+                    <h2>Choose AI Screening Engine</h2>
+                    <p>
+                      Run the same requirements through the engine that fits your
+                      review goal: deep matching, faster review, or cost control.
+                    </p>
+                  </div>
+
+                  <div className="engine-grid">
+                    <button
+                      className="engine-card main-engine"
+                      onClick={openFolderPicker}
+                      disabled={uploading}
+                    >
+                      <span className="engine-tag">Recommended</span>
+                      <h3>Main AI Screening</h3>
+                      <p>
+                        Full resume matching workflow with detailed output, ATS score,
+                        candidate fitment, and final Excel report.
+                      </p>
+                      <b>Upload resume folder </b>
+                    </button>
+
+                    <button
+                      className="engine-card hybrid-engine"
+                      onClick={() => navigate("/hybrid-analyze")}
+                      disabled={uploadingRequirement || uploading}
+                    >
+                      <span className="engine-tag">Balanced</span>
+                      <h3>Hybrid Review</h3>
+                      <p>
+                        Python pre-filtering plus AI review for faster screening and
+                        controlled processing cost.
+                      </p>
+                      <b>Open hybrid engine </b>
+                    </button>
+
+                    <button
+                      className="engine-card lowcost-engine"
+                      onClick={() => navigate("/lowcost-analyze")}
+                      disabled={uploadingRequirement || uploading}
+                    >
+                      <span className="engine-tag">Cost Control</span>
+                      <h3>Low Cost Review</h3>
+                      <p>
+                        Lightweight AI matching designed to reduce token usage while
+                        still producing recruiter-ready output.
+                      </p>
+                      <b>Open low cost engine </b>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="preview-header">
+                  <div>
+                    <h3>Requirement Preview</h3>
+                    <p>Candidate resumes will be matched against these Request-IDs.</p>
+                  </div>
+                </div>
+
+                <div className="table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Request-ID</th>
+                        <th>Job Title</th>
+                        <th>Skills</th>
+                        <th>Experience</th>
+                        <th>Location</th>
+                        <th>Status</th>
+                        <th>Rate Card</th>
+                        <th>Annual Rate</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {jobs.map((job, index) => (
+                        <tr key={index}>
+                          <td>{job["Request-ID"] || job.request_id || "-"}</td>
+
+                          <td>{job["Job Title"] || job.job_title || "-"}</td>
+
+                          <td className="skill-cell">
+                            {job["Skills - Name"] || job.skills_name || job.skills || "-"}
+                          </td>
+
+                          <td>
+                            {job["Skills - Experience"] ||
+                              job.skills_experience ||
+                              job.experience ||
+                              job["Experience"] ||
+                              "-"}
+                          </td>
+
+                          <td>
+                            {job["Work Location CDF"] ||
+                              job.work_location_cdf ||
+                              job["Work Location City"] ||
+                              job.location ||
+                              "-"}
+                          </td>
+
+                          <td>
+                            <span
+                              className={
+                                String(job.Status || job.status || "")
+                                  .toLowerCase()
+                                  .includes("open")
+                                  ? "status-pill open"
+                                  : "status-pill closed"
+                              }
+                            >
+                              {job.Status || job.status || "-"}
+                            </span>
+                          </td>
+
+                          <td>{job["Rate Card"] || job.rate_card || "-"}</td>
+
+                          <td>
+                            {job["Yearly Rate"] || job.Annually || job.annually || "-"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+
+          <input
+            ref={folderInputRef}
+            type="file"
+            multiple
+            webkitdirectory="true"
+            directory="true"
+            className="hidden-input"
+            onChange={handleFolderChange}
+          />
+
+          {uploading && (
+            <section className="section-card running-card">
+              <div className="running-top">
+                <div>
+                  <span className="section-label">RUNNING</span>
+                  <h2>Resume screening in progress</h2>
+                  <p>{bulkStatus.message || "Processing resumes..."}</p>
+                </div>
+
+                <strong>{progressPercent}%</strong>
+              </div>
+
+              <div className="progress-track">
+                <div style={{ width: `${progressPercent}%` }} />
+              </div>
+
+              <div className="running-grid">
+                <span>
+                  Processed <b>{bulkStatus.processed || 0}</b> /{" "}
+                  <b>{bulkStatus.total || selectedFiles.length}</b>
+                </span>
+                <span>
+                  Successful <b>{bulkStatus.successful || 0}</b>
+                </span>
+                <span>
+                  Failed <b>{bulkStatus.failed || 0}</b>
+                </span>
+                <span>
+                  Skipped <b>{bulkStatus.skipped || 0}</b>
+                </span>
+              </div>
+
+              {bulkStatus.current_file && (
+                <p className="file-note">
+                  Current file: <strong>{bulkStatus.current_file}</strong>
+                </p>
+              )}
+            </section>
           )}
 
-          {loading ? (
-            <div className="empty-box">Loading requirements...</div>
-          ) : requirementUploaded && jobs.length > 0 ? (
-            <>
-              <div className="section-header compact-section-header">
-                <div>
-                  <h2>Requirement Sheet Preview</h2>
+          {processed && (
+            <section className="section-card output-card">
+              <div>
+                <span className="section-label">FINAL OUTPUT</span>
+                <h2>Recruiter Excel generated</h2>
+
+                <p>
+                  Final Excel has been generated successfully.
+                  {processedCount > 0 && (
+                    <>
+                      {" "}
+                      Processed resumes: <strong>{processedCount}</strong>.
+                    </>
+                  )}
+                </p>
+
+                {outputFile && (
                   <p>
-                    These requirements are loaded from the uploaded client Excel.
-                    Candidate resumes will be matched against these Request-IDs.
+                    Output file: <strong>{outputFile}</strong>
                   </p>
+                )}
+
+                {skippedFiles.length > 0 && (
+                  <p>
+                    Skipped files: <strong>{skippedFiles.length}</strong>
+                  </p>
+                )}
+              </div>
+
+              <div className="download-actions">
+                {downloadUrl && (
+                  <a
+                    className="primary-btn"
+                    href={downloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Download Final Excel
+                  </a>
+                )}
+              </div>
+            </section>
+          )}
+
+          {processed && (
+            <section className="section-card">
+              <span className="section-label">COST SUMMARY</span>
+              <h2>AI usage and estimated cost</h2>
+
+              <div className="token-grid">
+                <div>
+                  <h4>{tokenUsage.input_tokens.toLocaleString()}</h4>
+                  <p>Input Tokens</p>
+                </div>
+
+                <div>
+                  <h4>{tokenUsage.output_tokens.toLocaleString()}</h4>
+                  <p>Output Tokens</p>
+                </div>
+
+                <div>
+                  <h4>{tokenUsage.total_tokens.toLocaleString()}</h4>
+                  <p>Total Tokens</p>
+                </div>
+
+                <div>
+                  <h4>${Number(costInfo.total_cost_usd || 0).toFixed(2)}</h4>
+                  <p>Cost USD</p>
+                </div>
+
+                <div>
+                  <h4>{Number(costInfo.total_cost_inr || 0).toFixed(0)}</h4>
+                  <p>Cost INR</p>
+                </div>
+
+                <div>
+                  <h4>{Number(costInfo.cost_per_resume_inr || 0).toFixed(2)}</h4>
+                  <p>Cost / Resume</p>
+                </div>
+              </div>
+
+              <p className="file-note">
+                Model used: <strong>{costInfo.model_name || "Claude"}</strong>.
+                Cost is estimated from token usage and configured model pricing.
+              </p>
+            </section>
+          )}
+
+          {processed && (
+            <section className="section-card">
+              <span className="section-label">RUNTIME SUMMARY</span>
+              <h2>Processing performance</h2>
+
+              <div className="token-grid">
+                <div>
+                  <h4>{bulkStatus.total || selectedFiles.length}</h4>
+                  <p>Total Files</p>
+                </div>
+
+                <div>
+                  <h4>{bulkStatus.successful || processedCount}</h4>
+                  <p>Successful</p>
+                </div>
+
+                <div>
+                  <h4>{bulkStatus.skipped || skippedFiles.length}</h4>
+                  <p>Skipped</p>
+                </div>
+
+                <div>
+                  <h4>{bulkStatus.failed || 0}</h4>
+                  <p>Failed</p>
+                </div>
+
+                <div>
+                  <h4>{runtimeInfo.total_time_text || "-"}</h4>
+                  <p>Total Time</p>
+                </div>
+
+                <div>
+                  <h4>
+                    {Number(runtimeInfo.average_seconds_per_resume || 0).toFixed(2)} sec
+                  </h4>
+                  <p>Avg / Resume</p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {processed && resumeLogs.length > 0 && (
+            <section className="section-card">
+              <div className="section-header">
+                <div>
+                  <span className="section-label">PROCESSING LOGS</span>
+                  <h2>Resume processing logs</h2>
+                  <p>Latest per-resume runtime and token usage details.</p>
                 </div>
               </div>
 
@@ -560,378 +952,44 @@ export default function Home() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Request-ID</th>
-                      <th>Job Title</th>
-                      <th>Skills</th>
-                      <th>Experience</th>
-                      <th>Location</th>
+                      <th>#</th>
+                      <th>File Name</th>
                       <th>Status</th>
-                      <th>Rate Card</th>
-                      <th>Annual Rate</th>
+                      <th>Time Taken</th>
+                      <th>Input Tokens</th>
+                      <th>Output Tokens</th>
+                      <th>Total Tokens</th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {jobs.map((job, index) => (
+                    {resumeLogs.map((log, index) => (
                       <tr key={index}>
-                        <td>{job["Request-ID"] || job.request_id || "-"}</td>
-
-                        <td>{job["Job Title"] || job.job_title || "-"}</td>
-
-                        <td className="skill-cell">
-                          {job["Skills - Name"] || job.skills_name || job.skills || "-"}
-                        </td>
-
-                        <td>
-                          {job["Skills - Experience"] ||
-                            job.skills_experience ||
-                            job.experience ||
-                            job["Experience"] ||
-                            "-"}
-                        </td>
-
-                        <td>
-                          {job["Work Location CDF"] ||
-                            job.work_location_cdf ||
-                            job["Work Location City"] ||
-                            job.location ||
-                            "-"}
-                        </td>
-
+                        <td>{log.index || index + 1}</td>
+                        <td>{log.filename || "-"}</td>
                         <td>
                           <span
                             className={
-                              String(job.Status || job.status || "")
-                                .toLowerCase()
-                                .includes("open")
-                                ? "status-pill open"
-                                : "status-pill closed"
+                              String(log.status || "").toLowerCase().includes("skip")
+                                ? "status-pill closed"
+                                : "status-pill open"
                             }
                           >
-                            {job.Status || job.status || "-"}
+                            {log.status || "-"}
                           </span>
                         </td>
-
-                        <td>{job["Rate Card"] || job.rate_card || "-"}</td>
-
-                        <td>
-                          {job["Yearly Rate"] ||
-                            job.Annually ||
-                            job.annually ||
-                            "-"}
-                        </td>
+                        <td>{log.duration_text || `${log.duration_seconds || 0} sec`}</td>
+                        <td>{Number(log.input_tokens || 0).toLocaleString()}</td>
+                        <td>{Number(log.output_tokens || 0).toLocaleString()}</td>
+                        <td>{Number(log.total_tokens || 0).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </>
-          ) : requirementUploaded && jobs.length === 0 ? (
-            <div className="empty-box">
-              Uploaded Requirement Excel has no valid requirement rows.
-            </div>
-          ) : null}
+            </section>
+          )}
         </section>
-
-        {!requirementUploaded && (
-          <section className="empty-box upload-first-box">
-            Upload a valid Requirement Excel first. Resume folder upload will be enabled
-            only after requirements are loaded successfully.
-          </section>
-        )}
-
-
-
-        {requirementUploaded && jobs.length > 0 && (
-          <section className="workflow-card">
-            <div className="workflow-content">
-              <span className="step-label">
-                {processed ? "Completed" : "Step 2"}
-              </span>
-
-              <h2>
-                {processed ? "Resume Screening Completed" : "Start Resume Screening"}
-              </h2>
-
-              <p>
-                Upload candidate resumes and automatically match them against the
-                Requirement Sheet. The system extracts candidate details, checks skill,
-                experience, location, CTC, and notice period fitment, then generates
-                the final Excel output.
-              </p>
-
-              <div className="workflow-steps">
-                <div className="workflow-step active">
-                  <span>1</span>
-                  <p>Requirement Excel Uploaded</p>
-                </div>
-
-                <div className={`workflow-step ${selectedFiles.length ? "active" : ""}`}>
-                  <span>2</span>
-                  <p>Resume Folder Uploaded</p>
-                </div>
-
-                <div className={`workflow-step ${processed ? "active" : ""}`}>
-                  <span>3</span>
-                  <p>Output Generated</p>
-                </div>
-              </div>
-
-              <input
-                ref={folderInputRef}
-                type="file"
-                multiple
-                webkitdirectory="true"
-                directory="true"
-                className="hidden-input"
-                onChange={handleFolderChange}
-              />
-
-              <button
-                className={processed ? "primary-btn success-action-btn" : "primary-btn"}
-                onClick={openFolderPicker}
-                disabled={uploading}
-              >
-                {actionButtonText}
-              </button>
-
-              {selectedFiles.length > 0 && !processed && (
-                <p className="upload-note">
-                  {selectedFiles.length} resume file(s) selected.
-                </p>
-              )}
-
-              {uploading && (
-                <section className="output-card">
-                  <div>
-                    <h3>Resume Analysis Running</h3>
-
-                    <p>
-                      Status: <strong>{bulkStatus.message || "Processing resumes..."}</strong>
-                    </p>
-
-                    <p>
-                      Progress:{" "}
-                      <strong>
-                        {bulkStatus.processed || 0} / {bulkStatus.total || selectedFiles.length}
-                      </strong>
-                    </p>
-
-                    <p>
-                      Successful: <strong>{bulkStatus.successful || 0}</strong>{" "}
-                      Failed: <strong>{bulkStatus.failed || 0}</strong>{" "}
-                      Skipped: <strong>{bulkStatus.skipped || 0}</strong>
-                    </p>
-
-                    {bulkStatus.current_file && (
-                      <p>
-                        Current file: <strong>{bulkStatus.current_file}</strong>
-                      </p>
-                    )}
-
-                    {bulkStatus.current_batch && (
-                      <p>
-                        Current batch: <strong>{bulkStatus.current_batch}</strong>
-                      </p>
-                    )}
-
-                    <p className="upload-note">
-                      Please keep this tab open. New resume upload is disabled until this batch completes.
-                    </p>
-                  </div>
-                </section>
-              )}
-
-
-
-              {processed && (
-                <p className="upload-note">
-                  Analysis completed. Download the output or analyze another resume folder.
-                </p>
-              )}
-
-              {error && <p className="error-text">{error}</p>}
-            </div>
-          </section>
-        )}
-
-        {processed && (
-          <section className="output-card">
-            <div>
-              <h3>Processing Completed</h3>
-
-              <p>
-                Final Excel has been generated successfully.
-                {processedCount > 0 && (
-                  <>
-                    {" "}
-                    Processed resumes: <strong>{processedCount}</strong>.
-                  </>
-                )}
-              </p>
-
-              {outputFile && (
-                <p>
-                  Output file: <strong>{outputFile}</strong>
-                </p>
-              )}
-
-              {skippedFiles.length > 0 && (
-                <p>
-                  Skipped files: <strong>{skippedFiles.length}</strong>
-                </p>
-              )}
-            </div>
-
-            <div className="download-actions">
-              {downloadUrl && (
-                <a
-                  className="secondary-btn"
-                  href={downloadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Download Final Excel
-                </a>
-              )}
-            </div>
-          </section>
-        )}
-
-        {processed && (
-          <section className="token-card">
-            <h3>AI Token Usage & Estimated Cost</h3>
-
-            <div className="token-grid">
-              <div>
-                <h4>{tokenUsage.input_tokens.toLocaleString()}</h4>
-                <p>Input Tokens</p>
-              </div>
-
-              <div>
-                <h4>{tokenUsage.output_tokens.toLocaleString()}</h4>
-                <p>Output Tokens</p>
-              </div>
-
-              <div>
-                <h4>{tokenUsage.total_tokens.toLocaleString()}</h4>
-                <p>Total Tokens Used</p>
-              </div>
-
-              <div>
-                <h4>${Number(costInfo.total_cost_usd || 0).toFixed(2)}</h4>
-                <p>Estimated Cost USD</p>
-              </div>
-
-              <div>
-                <h4>₹{Number(costInfo.total_cost_inr || 0).toFixed(0)}</h4>
-                <p>Estimated Cost INR</p>
-              </div>
-
-              <div>
-                <h4>₹{Number(costInfo.cost_per_resume_inr || 0).toFixed(2)}</h4>
-                <p>Cost Per Resume</p>
-              </div>
-            </div>
-
-            <p className="upload-note">
-              Model used: <strong>{costInfo.model_name || "Claude"}</strong>. Cost is estimated from token usage and configured model pricing. Final billing may vary.
-            </p>
-          </section>
-        )}
-
-        {processed && (
-          <section className="token-card">
-            <h3>Processing Runtime Summary</h3>
-
-            <div className="token-grid">
-              <div>
-                <h4>{bulkStatus.total || selectedFiles.length}</h4>
-                <p>Total Files</p>
-              </div>
-
-              <div>
-                <h4>{bulkStatus.successful || processedCount}</h4>
-                <p>Successful</p>
-              </div>
-
-              <div>
-                <h4>{bulkStatus.skipped || skippedFiles.length}</h4>
-                <p>Skipped</p>
-              </div>
-
-              <div>
-                <h4>{bulkStatus.failed || 0}</h4>
-                <p>Failed</p>
-              </div>
-
-              <div>
-                <h4>{runtimeInfo.total_time_text || "-"}</h4>
-                <p>Total Time</p>
-              </div>
-
-              <div>
-                <h4>
-                  {Number(runtimeInfo.average_seconds_per_resume || 0).toFixed(2)} sec
-                </h4>
-                <p>Avg Time / Resume</p>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {processed && resumeLogs.length > 0 && (
-          <section className="requirements-section">
-            <div className="section-header compact-section-header">
-              <div>
-                <h2>Resume Processing Logs</h2>
-                <p>
-                  Latest per-resume processing logs with runtime and token usage.
-                </p>
-              </div>
-            </div>
-
-            <div className="table-card">
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>File Name</th>
-                    <th>Status</th>
-                    <th>Time Taken</th>
-                    <th>Input Tokens</th>
-                    <th>Output Tokens</th>
-                    <th>Total Tokens</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {resumeLogs.map((log, index) => (
-                    <tr key={index}>
-                      <td>{log.index || index + 1}</td>
-                      <td>{log.filename || "-"}</td>
-                      <td>
-                        <span
-                          className={
-                            String(log.status || "").toLowerCase().includes("skip")
-                              ? "status-pill closed"
-                              : "status-pill open"
-                          }
-                        >
-                          {log.status || "-"}
-                        </span>
-                      </td>
-                      <td>{log.duration_text || `${log.duration_seconds || 0} sec`}</td>
-                      <td>{Number(log.input_tokens || 0).toLocaleString()}</td>
-                      <td>{Number(log.output_tokens || 0).toLocaleString()}</td>
-                      <td>{Number(log.total_tokens || 0).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
       </main>
     </div>
   );

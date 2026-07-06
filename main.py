@@ -3024,3 +3024,21 @@ def download_output_file(filename: str):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=filename,
     )
+    
+    
+    
+@app.post("/reset-requirement")
+async def reset_requirement():
+    try:
+        req_path = os.path.join("input", "uploaded_requirement.xlsx")
+
+        if os.path.exists(req_path):
+            os.remove(req_path)
+
+        return {
+            "status": "success",
+            "message": "Requirement sheet cleared"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

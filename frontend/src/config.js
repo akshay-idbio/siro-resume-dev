@@ -1,5 +1,14 @@
+
+
 // const config = {
+//   // API_BASE_URL: "/api",
 //   API_BASE_URL: "http://localhost:8006",
+
+//   // New hybrid backend
+//   HYBRID_API_BASE_URL: "http://localhost:8007",
+
+//   CEO_API_BASE_URL: "http://localhost:8008",
+//   LOWCOST_API_BASE_URL: "http://localhost:8008",
 
 //   AUTH_USERNAME: "siro",
 //   AUTH_PASSWORD: "siroai",
@@ -12,15 +21,12 @@
 
 // export default config;
 
+
 const config = {
-  // API_BASE_URL: "/api",
-  API_BASE_URL: "http://localhost:8006",
-
-  // New hybrid backend
-  HYBRID_API_BASE_URL: "http://localhost:8007",
-
-  CEO_API_BASE_URL: "http://localhost:8008",
-  LOWCOST_API_BASE_URL: "http://localhost:8008",
+  API_BASE_URL: "/api",
+  HYBRID_API_BASE_URL: "/hybrid-api",
+  CEO_API_BASE_URL: "/ceo-api",
+  LOWCOST_API_BASE_URL: "/lowcost-api",
 
   AUTH_USERNAME: "siro",
   AUTH_PASSWORD: "siroai",

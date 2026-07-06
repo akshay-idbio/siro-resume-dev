@@ -521,7 +521,7 @@ def ceo_start():
             if HARD_BLOCK_OVER_BUDGET_RESUME and cost_row["over_budget_estimate"]:
                 skipped_files.append({
                     "filename": original_name,
-                    "reason": f"Over estimated budget �{MAX_COST_PER_RESUME_INR}",
+                    "reason": f"Over estimated budget {MAX_COST_PER_RESUME_INR}",
                 })
                 try:
                     result["txt_path"].unlink()

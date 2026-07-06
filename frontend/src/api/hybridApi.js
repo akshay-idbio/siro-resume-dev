@@ -1,42 +1,56 @@
 import axios from "axios";
 import config from "../config";
 
-const hybridApi = axios.create({
-  baseURL: config.HYBRID_API_BASE_URL,
-  timeout: 900000,
-});
+const HYBRID_API_BASE_URL =
+  config.HYBRID_API_BASE_URL || "http://localhost:8007";
 
-export const startHybridAnalyze = async ({ files }) => {
+export async function startHybridAnalyze({ files }) {
   const formData = new FormData();
 
   files.forEach((file) => {
     formData.append("files", file);
   });
 
-  const response = await hybridApi.post("/hybrid-start-bulk-analyze", formData, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
+  const response = await axios.post(
+    `${HYBRID_API_BASE_URL}/hybrid-start-bulk-analyze`,
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+      timeout: 120000,
+    }
+  );
+
+  return response.data;
+}
+
+export async function getHybridStatus() {
+  const response = await axios.get(`${HYBRID_API_BASE_URL}/hybrid-status`, {
+    timeout: 30000,
   });
 
   return response.data;
-};
+}
 
-export const getHybridStatus = async () => {
-  const response = await hybridApi.get("/hybrid-status");
+export async function resetHybridStatus() {
+  const response = await axios.post(
+    `${HYBRID_API_BASE_URL}/hybrid-reset-status`,
+    {},
+    {
+      timeout: 30000,
+    }
+  );
+
   return response.data;
-};
+}
 
-export const resetHybridStatus = async () => {
-  const response = await hybridApi.post("/hybrid-reset-status");
-  return response.data;
-};
+export function getHybridDownloadUrl(downloadUrl) {
+  if (!downloadUrl) return "";
 
-export const getHybridDownloadUrl = (downloadUrl) => {
-  return `${config.HYBRID_API_BASE_URL}${downloadUrl}`;
-};
+  if (downloadUrl.startsWith("http")) {
+    return downloadUrl;
+  }
 
-export const checkHybridHealth = async () => {
-  const response = await hybridApi.get("/hybrid-health");
-  return response.data;
-};
+  return `${HYBRID_API_BASE_URL}${downloadUrl}`;
+}

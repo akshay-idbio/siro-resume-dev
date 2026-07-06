@@ -1,12 +1,12 @@
 services:
-  backend:
+  backend-main:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: siro-ai-backend
+    container_name: siro-ai-main-backend
     restart: unless-stopped
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     volumes:
       - ./input:/app/input
       - ./output:/app/output
@@ -14,6 +14,43 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  backend-hybrid:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: siro-ai-hybrid-backend
+    restart: unless-stopped
+    ports:
+      - "8007:8007"
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./hybrid_jobs:/app/hybrid_jobs
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: uvicorn hybrid_main:app --host 0.0.0.0 --port 8007
+
+  backend-lowcost:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: siro-ai-lowcost-backend
+    restart: unless-stopped
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./lowcost_jobs:/app/lowcost_jobs
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: uvicorn lowcost_main:app --host 0.0.0.0 --port 8008
 
   frontend:
     build:
@@ -24,4 +61,6 @@ services:
     ports:
       - "3001:80"
     depends_on:
-      - backend
+      - backend-main
+      - backend-hybrid
+      - backend-lowcost

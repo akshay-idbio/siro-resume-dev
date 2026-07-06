@@ -8,10 +8,6 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    && rm -rf /var/lib/apt/lists/*
-
-
-RUN apt-get update && apt-get install -y \
     libreoffice \
     libreoffice-writer \
     fonts-dejavu \
@@ -25,12 +21,20 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY main.py /app/main.py
-COPY config.py /app/config.py
+COPY hybrid_main.py /app/hybrid_main.py
 
+# change this filename based on your actual low-cost backend filename
+COPY lowcost_main.py /app/lowcost_main.py
+
+COPY config.py /app/config.py
 COPY input /app/input
 
 RUN mkdir -p /app/output
+RUN mkdir -p /app/hybrid_jobs
+RUN mkdir -p /app/lowcost_jobs
 
 EXPOSE 8000
+EXPOSE 8007
+EXPOSE 8008
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
