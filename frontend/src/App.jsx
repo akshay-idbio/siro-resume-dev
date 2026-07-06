@@ -5,7 +5,7 @@ import Home from "./pages/Home";
 import BulkAnalyze from "./pages/BulkAnalyze";
 import HybridAnalyze from "./pages/HybridAnalyze";
 import LowCostAnalyze from "./pages/LowCostAnalyze";
-import CeoAnalyze from "./pages/CeoAnalyze";
+
 
 /* ── Auth guard ── */
 function ProtectedRoute({ children }) {
@@ -43,7 +43,7 @@ const PROTECTED_ROUTES = [
   { path: "/bulk-analyze",    component: BulkAnalyze },
   { path: "/hybrid-analyze",  component: HybridAnalyze },
   { path: "/lowcost-analyze", component: LowCostAnalyze },
-  { path: "/ceo-analyze",     component: CeoAnalyze },
+ 
 ];
 
 export default function App() {
