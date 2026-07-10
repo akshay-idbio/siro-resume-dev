@@ -5,15 +5,18 @@ services:
       dockerfile: Dockerfile.backend
     container_name: siro-ai-main-backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    network_mode: host
     volumes:
-      - ./input:/app/input
+      - ./storage:/app/storage
       - ./output:/app/output
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - MAIN_AI_PARALLEL_RESUMES=25
+      - STORAGE_BASE_DIR=/app/storage
+      - MONGODB_URL=mongodb://127.0.0.1:27017
+      - MONGODB_DB=siro_resume_dev
     command: uvicorn main:app --host 0.0.0.0 --port 8000
 
   backend-hybrid:
@@ -25,14 +28,13 @@ services:
     ports:
       - "8007:8007"
     volumes:
-      - ./input:/app/input
       - ./output:/app/output
       - ./hybrid_jobs:/app/hybrid_jobs
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
-    command: uvicorn hybrid_main:app --host 0.0.0.0 --port 8007
+    command: uvicorn hybrid_main_v2:app --host 0.0.0.0 --port 8007
 
   backend-lowcost:
     build:
@@ -43,7 +45,6 @@ services:
     ports:
       - "8008:8008"
     volumes:
-      - ./input:/app/input
       - ./output:/app/output
       - ./lowcost_jobs:/app/lowcost_jobs
     env_file:

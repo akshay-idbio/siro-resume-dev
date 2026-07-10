@@ -7,9 +7,13 @@ import time
 from datetime import datetime
 from typing import Optional, Any, List
 
+from db import init_db_indexes
+from auth import auth_router, admin_router
+
 import anthropic
 import pandas as pd
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
+
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -18,10 +22,30 @@ from pydantic import BaseModel
 
 from config import Settings, get_settings
 import asyncio
+import glob
+from auth import get_current_user
+from job_db import (
+    get_user_job_by_id,
+    mark_job_processing,
+    mark_job_completed,
+    mark_job_failed,
+    mark_resume_processing,
+    mark_resume_completed,
+    mark_resume_failed,
+    update_job_progress,
+    save_job_results,
+    get_job_resumes,
+    update_job_cost,
+)
+
+from auth import auth_router, admin_router, get_current_user
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from job_upload_routes import job_upload_router
+
+from job_routes import jobs_router, admin_jobs_router
 
 # =========================================================
 # APP
@@ -41,6 +65,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_event():
+    await init_db_indexes()
+
+
+app.include_router(auth_router)
+app.include_router(admin_router)
+
+app.include_router(jobs_router)
+app.include_router(admin_jobs_router)
+
+app.include_router(job_upload_router)
 
 
 # =========================================================
@@ -197,6 +234,41 @@ class BulkAnalyzeResponse(BaseModel):
 # =========================================================
 # DEBUG
 # =========================================================
+
+
+
+def is_claude_api_error(error_text: str) -> bool:
+    error_text = str(error_text or "").lower()
+
+    claude_error_keywords = [
+        "credit balance is too low",
+        "rate limit",
+        "rate_limit",
+        "rate limit exceeded",
+        "invalid api key",
+        "authentication_error",
+        "permission_error",
+        "api key",
+        "anthropic api",
+        "badrequesterror",
+        "overloaded",
+        "internal_server_error",
+        "service unavailable",
+        "temporarily unavailable",
+        "connection error",
+        "timeout",
+        "timed out",
+        "too many requests",
+        "429",
+        "401",
+        "403",
+        "500",
+        "502",
+        "503",
+        "504",
+    ]
+
+    return any(keyword in error_text for keyword in claude_error_keywords)
 
 
 def debug(msg: str):
@@ -484,6 +556,86 @@ def clean_json_text(raw: str) -> dict:
 # =========================================================
 # EXCEL LOADING
 # =========================================================
+
+def load_requirement_df_from_path(excel_path: str) -> pd.DataFrame:
+    debug(f"Loading job-specific requirement Excel: {excel_path}")
+
+    if not os.path.exists(excel_path):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Requirement Excel not found for this job: {excel_path}",
+        )
+
+    xls = pd.ExcelFile(excel_path)
+    debug(f"Available sheets: {xls.sheet_names}")
+
+    matched_sheets = [
+        s for s in xls.sheet_names if "requirement" in str(s).strip().lower()
+    ]
+
+    if matched_sheets:
+        sheet_name = matched_sheets[0]
+    else:
+        sheet_name = xls.sheet_names[0]
+
+    debug(f"Using requirement sheet: {sheet_name}")
+
+    df = pd.read_excel(excel_path, sheet_name=sheet_name)
+    df.columns = [str(c).strip() for c in df.columns]
+
+    rename_map = {
+        "Monthly Company Pay Rate": "Rate Card",
+        "Monthly Company Pay Rate ": "Rate Card",
+        "Anually Company Pay Rate": "Yearly Rate",
+        "Annually Company Pay Rate": "Yearly Rate",
+        "Annual Company Pay Rate": "Yearly Rate",
+        "Request ID": "Request-ID",
+        "Request Id": "Request-ID",
+        "Work Location City": "Work Location City",
+        "Work Location CDF": "Work Location CDF",
+    }
+
+    df = df.rename(columns=rename_map)
+
+    missing_cols = [
+        col for col in REQUIRED_REQUIREMENT_COLUMNS if col not in df.columns
+    ]
+
+    if missing_cols:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Invalid Requirement Excel format.",
+                "missing_columns": missing_cols,
+                "expected_columns": REQUIRED_REQUIREMENT_COLUMNS,
+            },
+        )
+
+    df["Request-ID"] = df["Request-ID"].astype(str).str.strip()
+
+    df = df[df["Request-ID"].astype(str).str.strip() != ""]
+    df = df.dropna(how="all")
+
+    optional_cols = [
+        "Work Location City",
+        "System Enhancements Required",
+        "Candidate Annual CTC",
+    ]
+
+    for col in optional_cols:
+        if col not in df.columns:
+            df[col] = ""
+
+    if df.empty:
+        raise HTTPException(
+            status_code=400,
+            detail="Requirement Excel has no valid rows with Request-ID.",
+        )
+
+    debug(f"Job requirement dataframe shape: {df.shape}")
+    return df
+
+
 def load_requirement_df(cfg: Settings) -> pd.DataFrame:
     excel_path = UPLOADED_REQUIREMENT_PATH
 
@@ -2861,7 +3013,13 @@ async def process_single_resume_file(
         }
 
     except Exception as e:
+        error_text = str(e)
         debug(f"Error processing file {file.filename}: {repr(e)}")
+
+        if is_claude_api_error(error_text):
+            raise RuntimeError(
+                f"Claude API error while processing {file.filename}: {error_text}"
+            )
 
         candidate_name = file.filename or "unknown_resume"
 
@@ -2871,7 +3029,7 @@ async def process_single_resume_file(
         error_output_row["ATS"] = "0"
         error_output_row["Experience Mismatch"] = "No"
         error_output_row["Skill Mismatch"] = "No"
-        error_output_row["Remark"] = f"Error while processing resume: {str(e)}"
+        error_output_row["Remark"] = f"Resume parsing/processing error: {error_text}"
 
         tracker_row = {
             "Date": datetime.now().strftime("%d-%m-%Y"),
@@ -2881,7 +3039,7 @@ async def process_single_resume_file(
             "Candidate": candidate_name,
             "Verdict": "Not Suitable",
             "Call Status": "",
-            "Remarks": "Not Suitable",
+            "Remarks": "Resume parsing/processing error",
         }
 
         return {
@@ -3042,3 +3200,371 @@ async def reset_requirement():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def process_one_resume_for_db_job(
+    job_id: str,
+    user_id: str,
+    resume_path: str,
+    resume_filename: str,
+    requirements_df,
+    cfg: Settings,
+    index: int,
+    total_files: int,
+    semaphore: asyncio.Semaphore,
+):
+    async with semaphore:
+        filename = resume_filename or os.path.basename(resume_path)
+        resume_start_time = time.time()
+
+        await mark_resume_processing(job_id, filename)
+
+        await update_job_progress(
+            job_id=job_id,
+            current_file=filename,
+            message=f"Processing resume {index} of {total_files}",
+        )
+
+        fake_file = SavedUploadFile(
+            filename=filename,
+            content_type="application/pdf",
+            path=resume_path,
+        )
+
+        try:
+            result = await process_single_resume_file(
+                file=fake_file,
+                requirements_df=requirements_df,
+                cfg=cfg,
+                index=index,
+                total_files=total_files,
+            )
+
+            resume_seconds = round(time.time() - resume_start_time, 2)
+
+            usage = result.get("token_usage", {})
+            resume_input_tokens = int(usage.get("input_tokens", 0))
+            resume_output_tokens = int(usage.get("output_tokens", 0))
+            resume_total_tokens = int(usage.get("total_tokens", 0))
+
+            result_output_rows = result.get("output_rows") or []
+            result_tracker_rows = result.get("tracker_rows") or []
+
+            matched_count = len(result_output_rows)
+
+            if result.get("status") == "skipped":
+                await mark_resume_failed(
+                    job_id=job_id,
+                    filename=filename,
+                    duration_seconds=resume_seconds,
+                    error_message="Skipped unsupported or empty file",
+                )
+
+                await update_job_progress(
+                    job_id=job_id,
+                    processed_delta=1,
+                    skipped_delta=1,
+                    input_tokens_delta=resume_input_tokens,
+                    output_tokens_delta=resume_output_tokens,
+                    total_tokens_delta=resume_total_tokens,
+                    current_file=filename,
+                    message=f"Skipped resume {index} of {total_files}",
+                )
+
+                return {
+                    "filename": filename,
+                    "status": "skipped",
+                    "output_rows": [],
+                    "tracker_rows": [],
+                    "input_tokens": resume_input_tokens,
+                    "output_tokens": resume_output_tokens,
+                    "total_tokens": resume_total_tokens,
+                    "error": "",
+                }
+
+            await save_job_results(
+                job_id=job_id,
+                user_id=user_id,
+                resume_filename=filename,
+                output_rows=result_output_rows,
+            )
+
+            await mark_resume_completed(
+                job_id=job_id,
+                filename=filename,
+                duration_seconds=resume_seconds,
+                input_tokens=resume_input_tokens,
+                output_tokens=resume_output_tokens,
+                total_tokens=resume_total_tokens,
+                matched_requirements_count=matched_count,
+            )
+
+            await update_job_progress(
+                job_id=job_id,
+                processed_delta=1,
+                successful_delta=1,
+                input_tokens_delta=resume_input_tokens,
+                output_tokens_delta=resume_output_tokens,
+                total_tokens_delta=resume_total_tokens,
+                current_file=filename,
+                message=f"Processed resume {index} of {total_files}",
+            )
+
+            return {
+                "filename": filename,
+                "status": "completed",
+                "output_rows": result_output_rows,
+                "tracker_rows": result_tracker_rows,
+                "input_tokens": resume_input_tokens,
+                "output_tokens": resume_output_tokens,
+                "total_tokens": resume_total_tokens,
+                "error": "",
+            }
+
+        except Exception as e:
+            resume_seconds = round(time.time() - resume_start_time, 2)
+
+            await mark_resume_failed(
+                job_id=job_id,
+                filename=filename,
+                duration_seconds=resume_seconds,
+                error_message=str(e),
+            )
+
+            await update_job_progress(
+                job_id=job_id,
+                processed_delta=1,
+                failed_delta=1,
+                current_file=filename,
+                message=f"Failed resume {index} of {total_files}",
+            )
+
+            return {
+                "filename": filename,
+                "status": "failed",
+                "output_rows": [],
+                "tracker_rows": [],
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "error": str(e),
+            }
+
+
+async def process_db_backed_main_job_background(
+    job_id: str,
+    user_id: str,
+    cfg: Settings,
+):
+    try:
+        batch_start_time = time.time()
+        job = await get_user_job_by_id(user_id=user_id, job_id=job_id)
+        
+
+        if not job:
+            await mark_job_failed(job_id, "Job not found")
+            return
+
+        requirement_dir = job.get("requirement_dir")
+        resumes_dir = job.get("resumes_dir")
+        outputs_dir = job.get("outputs_dir")
+
+        if not requirement_dir or not os.path.exists(requirement_dir):
+            await mark_job_failed(job_id, "Requirement folder not found")
+            return
+
+        if not resumes_dir or not os.path.exists(resumes_dir):
+            await mark_job_failed(job_id, "Resumes folder not found")
+            return
+
+        requirement_files = []
+        requirement_files.extend(glob.glob(os.path.join(requirement_dir, "*.xlsx")))
+        requirement_files.extend(glob.glob(os.path.join(requirement_dir, "*.xls")))
+
+        if not requirement_files:
+            await mark_job_failed(job_id, "No requirement Excel found for this job")
+            return
+
+        requirement_path = requirement_files[0]
+
+        # Use MongoDB job_resumes as source of truth.
+        # file_path is used for reading; filename is original uploaded filename for UI/Excel.
+        resume_records = await get_job_resumes(job_id)
+
+        resume_items = []
+        missing_resume_files = []
+
+        for resume_doc in resume_records:
+            original_filename = resume_doc.get("filename") or resume_doc.get("original_filename") or ""
+            file_path = resume_doc.get("file_path") or ""
+
+            if file_path and os.path.exists(file_path):
+                resume_items.append({
+                    "filename": original_filename or os.path.basename(file_path),
+                    "file_path": file_path,
+                })
+            else:
+                missing_resume_files.append(original_filename or file_path)
+
+        resume_items = sorted(resume_items, key=lambda x: x["filename"].lower())
+
+        if missing_resume_files:
+            for missing_filename in missing_resume_files:
+                await mark_resume_failed(
+                    job_id=job_id,
+                    filename=missing_filename,
+                    duration_seconds=0,
+                    error_message="Resume file missing from storage folder",
+                )
+
+        if not resume_items:
+            await mark_job_failed(job_id, "No resumes found for this job")
+            return
+
+        parallel_limit = int(os.getenv("MAIN_AI_PARALLEL_RESUMES", "5"))
+        parallel_limit = max(1, min(parallel_limit, 50))
+
+        await mark_job_processing(job_id)
+
+        await update_job_progress(
+            job_id=job_id,
+            current_file="",
+            message=f"Parallel processing started with concurrency={parallel_limit}",
+        )
+
+        requirements_df = load_requirement_df_from_path(requirement_path)
+
+        total_files = len(resume_items)
+        semaphore = asyncio.Semaphore(parallel_limit)
+
+        tasks = [
+            process_one_resume_for_db_job(
+                job_id=job_id,
+                user_id=user_id,
+                resume_path=resume_item["file_path"],
+                resume_filename=resume_item["filename"],
+                requirements_df=requirements_df,
+                cfg=cfg,
+                index=index,
+                total_files=total_files,
+                semaphore=semaphore,
+            )
+            for index, resume_item in enumerate(resume_items, start=1)
+        ]
+
+        task_results = await asyncio.gather(*tasks)
+
+        output_rows = []
+        tracker_rows = []
+
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_tokens = 0
+
+        failed_files = []
+        skipped_files = []
+
+        for item in task_results:
+            output_rows.extend(item.get("output_rows") or [])
+            tracker_rows.extend(item.get("tracker_rows") or [])
+
+            total_input_tokens += int(item.get("input_tokens") or 0)
+            total_output_tokens += int(item.get("output_tokens") or 0)
+            total_tokens += int(item.get("total_tokens") or 0)
+
+            if item.get("status") == "failed":
+                failed_files.append(item.get("filename"))
+            elif item.get("status") == "skipped":
+                skipped_files.append(item.get("filename"))
+
+        if not output_rows:
+            await mark_job_failed(job_id, "No valid output rows generated")
+            return
+
+        output_filename = f"resume_requirement_output_{job_id}.xlsx"
+        output_path = os.path.join(outputs_dir, output_filename)
+
+        create_final_excel(
+            output_rows=output_rows,
+            tracker_rows=tracker_rows,
+            output_path=output_path,
+        )
+
+        # await mark_job_completed(job_id, output_file_path=output_path)
+
+        batch_seconds = round(time.time() - batch_start_time, 2)
+        average_seconds_per_resume = 0
+
+        if total_files > 0:
+            average_seconds_per_resume = round(batch_seconds / total_files, 2)
+
+        await mark_job_completed(
+            job_id,
+            output_file_path=output_path,
+            processing_time_seconds=batch_seconds,
+            average_seconds_per_resume=average_seconds_per_resume,
+        )
+
+        await update_job_cost(job_id)
+
+        await update_job_progress(
+            job_id=job_id,
+            current_file="",
+            message=f"Job completed successfully. Failed={len(failed_files)}, Skipped={len(skipped_files)}",
+        )
+
+    except Exception as e:
+        await mark_job_failed(job_id, str(e))
+        
+@app.post("/jobs/{job_id}/start")
+async def start_db_backed_main_job(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    cfg: Settings = Depends(get_settings),
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = str(current_user["_id"])
+
+    job = await get_user_job_by_id(user_id=user_id, job_id=job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.get("mode") != "main_ai":
+        raise HTTPException(
+            status_code=400,
+            detail="This endpoint currently supports only main_ai jobs",
+        )
+
+    if job.get("status") == "processing":
+        raise HTTPException(status_code=409, detail="Job is already processing")
+
+    if job.get("status") == "completed":
+        raise HTTPException(status_code=409, detail="Job is already completed")
+
+    await update_job_progress(
+        job_id=job_id,
+        message="Job accepted for background processing",
+    )
+
+    background_tasks.add_task(
+        process_db_backed_main_job_background,
+        job_id,
+        user_id,
+        cfg,
+    )
+
+    return {
+        "success": True,
+        "message": "Job processing started in background",
+        "job_id": job_id,
+        "status": "processing_started",
+    }
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "ok",
+        "service": "siro-resume-backend"
+    }

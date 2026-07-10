@@ -860,17 +860,44 @@ export default function Home() {
 
               <div className="token-grid">
                 <div>
-                  <h4>{tokenUsage.input_tokens.toLocaleString()}</h4>
+                  <h4>{tokenUsage.input_tokens.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })}</h4>
                   <p>Input Tokens</p>
                 </div>
 
                 <div>
-                  <h4>{tokenUsage.output_tokens.toLocaleString()}</h4>
+                  <h4>{tokenUsage.output_tokens.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })}</h4>
                   <p>Output Tokens</p>
                 </div>
 
                 <div>
-                  <h4>{tokenUsage.total_tokens.toLocaleString()}</h4>
+                  <h4>{tokenUsage.total_tokens.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })}</h4>
                   <p>Total Tokens</p>
                 </div>
 
@@ -979,9 +1006,36 @@ export default function Home() {
                           </span>
                         </td>
                         <td>{log.duration_text || `${log.duration_seconds || 0} sec`}</td>
-                        <td>{Number(log.input_tokens || 0).toLocaleString()}</td>
-                        <td>{Number(log.output_tokens || 0).toLocaleString()}</td>
-                        <td>{Number(log.total_tokens || 0).toLocaleString()}</td>
+                        <td>{Number(log.input_tokens || 0).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })}</td>
+                        <td>{Number(log.output_tokens || 0).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })}</td>
+                        <td>{Number(log.total_tokens || 0).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })}</td>
                       </tr>
                     ))}
                   </tbody>

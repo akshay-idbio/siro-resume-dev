@@ -4,15 +4,17 @@ import config from "../config";
 const HYBRID_API_BASE_URL =
   config.HYBRID_API_BASE_URL || "http://localhost:8007";
 
-export async function startHybridAnalyze({ files }) {
+export async function startHybridAnalyze({ requirementFile, files }) {
   const formData = new FormData();
+
+  formData.append("requirement_file", requirementFile);
 
   files.forEach((file) => {
     formData.append("files", file);
   });
 
   const response = await axios.post(
-    `${HYBRID_API_BASE_URL}/hybrid-start-bulk-analyze`,
+    `${HYBRID_API_BASE_URL}/hybrid-start-bulk-analyze-v2`,
     formData,
     {
       headers: {

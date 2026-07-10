@@ -1,37 +1,17 @@
-FROM python:3.10-slim
+FROM siro_resume-backend-main:latest
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    libreoffice \
-    libreoffice-writer \
-    fonts-dejavu \
-    fonts-liberation \
-    fontconfig \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY requirements.txt /app/requirements.txt
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py /app/main.py
-COPY hybrid_main.py /app/hybrid_main.py
+COPY . /app
 
-# change this filename based on your actual low-cost backend filename
-COPY lowcost_main.py /app/lowcost_main.py
-
-COPY config.py /app/config.py
-COPY input /app/input
-
-RUN mkdir -p /app/output
-RUN mkdir -p /app/hybrid_jobs
-RUN mkdir -p /app/lowcost_jobs
+RUN mkdir -p /app/storage /app/output /app/hybrid_jobs /app/lowcost_jobs
 
 EXPOSE 8000
 EXPOSE 8007

@@ -1,29 +1,33 @@
 import { useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Login from "./pages/Login";
-import Home from "./pages/Home";
+import MainAiAnalyze from "./pages/MainAiAnalyze";
+import AdminDashboard from "./pages/AdminDashboard";
 import BulkAnalyze from "./pages/BulkAnalyze";
 import HybridAnalyze from "./pages/HybridAnalyze";
 import LowCostAnalyze from "./pages/LowCostAnalyze";
 
-
-/* ── Auth guard ── */
 function ProtectedRoute({ children }) {
+  const token = localStorage.getItem("siro_token");
   const isLoggedIn = localStorage.getItem("siro_logged_in") === "true";
-  if (!isLoggedIn) return <Navigate to="/login" replace />;
+
+  if (!token || !isLoggedIn) {
+    return <Navigate to="/login" replace />;
+  }
+
   return children;
 }
 
-/* ── Page transition wrapper ── */
 function AnimatedPage({ children }) {
   const ref = useRef(null);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+
     el.style.opacity = "0";
     el.style.transform = "translateY(14px)";
-    el.style.transition = "opacity 0.38s ease, transform 0.38s ease";
+    el.style.transition = "opacity 0.28s ease, transform 0.28s ease";
 
     const raf = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -31,19 +35,24 @@ function AnimatedPage({ children }) {
         el.style.transform = "translateY(0)";
       });
     });
+
     return () => cancelAnimationFrame(raf);
   }, []);
 
   return <div ref={ref}>{children}</div>;
 }
 
-/* ── Route map (DRY) ── */
 const PROTECTED_ROUTES = [
-  { path: "/",                component: Home },
-  { path: "/bulk-analyze",    component: BulkAnalyze },
-  { path: "/hybrid-analyze",  component: HybridAnalyze },
+  { path: "/", component: MainAiAnalyze },
+  { path: "/main-ai", component: MainAiAnalyze },
+  { path: "/admin", component: AdminDashboard },
+
+  // old pages kept for later, not main flow now
+  { path: "/bulk-analyze", component: BulkAnalyze },
+  { path: "/hybrid-analyze", component: HybridAnalyze },
+  { path: "/hybrid-ai", component: HybridAnalyze },
   { path: "/lowcost-analyze", component: LowCostAnalyze },
- 
+  { path: "/lowcost-ai", component: LowCostAnalyze },
 ];
 
 export default function App() {
@@ -51,10 +60,8 @@ export default function App() {
 
   return (
     <Routes location={location} key={location.pathname}>
-      {/* Public */}
       <Route path="/login" element={<Login />} />
 
-      {/* Protected — each wraps with page-transition animation */}
       {PROTECTED_ROUTES.map(({ path, component: Component }) => (
         <Route
           key={path}
@@ -69,7 +76,6 @@ export default function App() {
         />
       ))}
 
-      {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

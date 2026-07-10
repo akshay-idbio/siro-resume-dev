@@ -1,4 +1,4 @@
-.env
+*.env
 __pycache__/
 *.pyc
 
@@ -19,3 +19,5 @@ frontend/b.py
 *.pdf
 *.docx
 *.doc
+*.PDF
+*.zip

@@ -1,50 +1,85 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  startHybridAnalyze,
-  getHybridStatus,
   getHybridDownloadUrl,
+  getHybridStatus,
   resetHybridStatus,
+  startHybridAnalyze,
 } from "../api/hybridApi";
 import config from "../config";
 import "./HybridAnalyze.css";
 
+const initialStatus = {
+  job_id: "",
+  pipeline: "hybrid",
+  status: "idle",
+  message: "",
+  total: 0,
+  processed: 0,
+  successful: 0,
+  failed: 0,
+  skipped: 0,
+  current_file: "",
+  output_filename: "",
+  download_url: "",
+  processing_time_seconds: 0,
+  processing_time_text: "",
+  token_usage: {
+    input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+    cost_usd: 0,
+    cost_inr: 0,
+    cost_per_resume_inr: 0,
+  },
+  recent_logs: [],
+};
+
 export default function HybridAnalyze() {
   const navigate = useNavigate();
+  const requirementInputRef = useRef(null);
   const folderInputRef = useRef(null);
   const pollIntervalRef = useRef(null);
 
+  const [requirementFile, setRequirementFile] = useState(null);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [processed, setProcessed] = useState(false);
   const [error, setError] = useState("");
-
-  const [status, setStatus] = useState({
-    job_id: "",
-    pipeline: "hybrid",
-    status: "idle",
-    message: "",
-    total: 0,
-    processed: 0,
-    successful: 0,
-    failed: 0,
-    skipped: 0,
-    current_file: "",
-    output_filename: "",
-    download_url: "",
-    processing_time_seconds: 0,
-    token_usage: {
-      input_tokens: 0,
-      output_tokens: 0,
-      total_tokens: 0,
-      cost_usd: 0,
-      cost_inr: 0,
-      cost_per_resume_inr: 0,
-    },
-    recent_logs: [],
-  });
+  const [status, setStatus] = useState(initialStatus);
 
   useEffect(() => {
+    const loadExistingStatus = async () => {
+      try {
+        const data = await getHybridStatus();
+
+        if (data && data.status && data.status !== "idle") {
+          setStatus(data);
+
+          if (data.status === "processing" || data.status === "queued") {
+            setUploading(true);
+            setProcessed(false);
+            pollStatus();
+          }
+
+          if (data.status === "completed") {
+            setUploading(false);
+            setProcessed(true);
+          }
+
+          if (data.status === "failed" || data.status === "error") {
+            setUploading(false);
+            setProcessed(false);
+            setError(data.message || "Hybrid resume review failed.");
+          }
+        }
+      } catch (err) {
+        console.error("Unable to load existing hybrid status", err);
+      }
+    };
+
+    loadExistingStatus();
+
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
@@ -52,18 +87,43 @@ export default function HybridAnalyze() {
     };
   }, []);
 
-  const validateFiles = (files) => {
+  const resetLocalStatus = () => {
+    setStatus(initialStatus);
+    setProcessed(false);
+    setUploading(false);
+  };
+
+  const validateRequirementFile = (file) => {
+    if (!file) return "Please select Requirement Excel first.";
+
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".xlsx") && !name.endsWith(".xls")) {
+      return "Invalid Requirement Excel. Supported formats: XLSX, XLS.";
+    }
+
+    return "";
+  };
+
+  const getValidResumeFiles = (files) => {
+    return Array.from(files || []).filter((file) => {
+      const name = file.name.toLowerCase();
+      return (
+        name.endsWith(".pdf") ||
+        name.endsWith(".docx") ||
+        name.endsWith(".doc")
+      );
+    });
+  };
+
+  const validateResumeFiles = (files) => {
     if (!files || files.length === 0) {
       return "Please select at least one resume file.";
     }
 
-    const allowedFiles = Array.from(files).filter((file) => {
-      const name = file.name.toLowerCase();
-      return name.endsWith(".pdf") || name.endsWith(".docx");
-    });
+    const allowedFiles = getValidResumeFiles(files);
 
     if (allowedFiles.length === 0) {
-      return "No supported resume files found. Hybrid review supports PDF and DOCX files.";
+      return "No supported resume files found. Hybrid supports PDF, DOCX and DOC files.";
     }
 
     for (const file of allowedFiles) {
@@ -76,11 +136,42 @@ export default function HybridAnalyze() {
     return "";
   };
 
-  const getValidResumeFiles = (files) => {
-    return Array.from(files || []).filter((file) => {
-      const name = file.name.toLowerCase();
-      return name.endsWith(".pdf") || name.endsWith(".docx");
-    });
+  const handleRequirementChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    const err = validateRequirementFile(file);
+
+    if (err) {
+      setRequirementFile(null);
+      setError(err);
+      return;
+    }
+
+    setRequirementFile(file);
+    setError("");
+    resetLocalStatus();
+  };
+
+  const handleFolderChange = (event) => {
+    const files = getValidResumeFiles(event.target.files);
+    const err = validateResumeFiles(files);
+
+    if (err) {
+      setSelectedFiles([]);
+      setError(err);
+      return;
+    }
+
+    setSelectedFiles(files);
+    setError("");
+    resetLocalStatus();
+  };
+
+  const openRequirementPicker = () => {
+    if (uploading) return;
+    if (requirementInputRef.current) {
+      requirementInputRef.current.value = "";
+      requirementInputRef.current.click();
+    }
   };
 
   const openFolderPicker = () => {
@@ -89,31 +180,10 @@ export default function HybridAnalyze() {
       return;
     }
 
-    if (processed) {
-      handleReset(false);
-    }
-
     if (folderInputRef.current) {
       folderInputRef.current.value = "";
       folderInputRef.current.click();
     }
-  };
-
-  const handleFolderChange = async (event) => {
-    const files = getValidResumeFiles(event.target.files);
-    const errorMessage = validateFiles(files);
-
-    if (errorMessage) {
-      setError(errorMessage);
-      setSelectedFiles([]);
-      return;
-    }
-
-    setSelectedFiles(files);
-    setError("");
-    setProcessed(false);
-
-    await startHybrid(files);
   };
 
   const pollStatus = () => {
@@ -147,9 +217,16 @@ export default function HybridAnalyze() {
     }, 3000);
   };
 
-  const startHybrid = async (filesToUpload = selectedFiles) => {
-    if (!filesToUpload.length) {
-      setError("Please select resume files first.");
+  const startHybrid = async () => {
+    const reqErr = validateRequirementFile(requirementFile);
+    if (reqErr) {
+      setError(reqErr);
+      return;
+    }
+
+    const resumeErr = validateResumeFiles(selectedFiles);
+    if (resumeErr) {
+      setError(resumeErr);
       return;
     }
 
@@ -159,39 +236,22 @@ export default function HybridAnalyze() {
       setError("");
 
       setStatus({
-        job_id: "",
-        pipeline: "hybrid",
+        ...initialStatus,
         status: "queued",
-        message: "Uploading resumes and starting hybrid review...",
-        total: filesToUpload.length,
-        processed: 0,
-        successful: 0,
-        failed: 0,
-        skipped: 0,
-        current_file: "",
-        output_filename: "",
-        download_url: "",
-        processing_time_seconds: 0,
-        token_usage: {
-          input_tokens: 0,
-          output_tokens: 0,
-          total_tokens: 0,
-          cost_usd: 0,
-          cost_inr: 0,
-          cost_per_resume_inr: 0,
-        },
-        recent_logs: [],
+        message: "Uploading requirement and resumes for hybrid review...",
+        total: selectedFiles.length,
       });
 
       const result = await startHybridAnalyze({
-        files: filesToUpload,
+        requirementFile,
+        files: selectedFiles,
       });
 
       setStatus((prev) => ({
         ...prev,
         job_id: result.job_id || "",
         status: result.status || "queued",
-        total: result.total || filesToUpload.length,
+        total: result.total || selectedFiles.length,
         message: result.message || "Hybrid review started.",
       }));
 
@@ -201,13 +261,12 @@ export default function HybridAnalyze() {
       setUploading(false);
 
       const detail = err?.response?.data?.detail;
-
       if (typeof detail === "string") {
         setError(detail);
+      } else if (detail?.message) {
+        setError(detail.message);
       } else {
-        setError(
-          "Hybrid review failed. Make sure Requirement Excel is uploaded from the main dashboard and hybrid backend is running on port 8007."
-        );
+        setError("Hybrid review failed. Please check backend logs.");
       }
     }
   };
@@ -218,39 +277,15 @@ export default function HybridAnalyze() {
       pollIntervalRef.current = null;
     }
 
+    setRequirementFile(null);
     setSelectedFiles([]);
     setUploading(false);
     setProcessed(false);
     setError("");
+    setStatus(initialStatus);
 
-    setStatus({
-      job_id: "",
-      pipeline: "hybrid",
-      status: "idle",
-      message: "",
-      total: 0,
-      processed: 0,
-      successful: 0,
-      failed: 0,
-      skipped: 0,
-      current_file: "",
-      output_filename: "",
-      download_url: "",
-      processing_time_seconds: 0,
-      token_usage: {
-        input_tokens: 0,
-        output_tokens: 0,
-        total_tokens: 0,
-        cost_usd: 0,
-        cost_inr: 0,
-        cost_per_resume_inr: 0,
-      },
-      recent_logs: [],
-    });
-
-    if (folderInputRef.current) {
-      folderInputRef.current.value = "";
-    }
+    if (requirementInputRef.current) requirementInputRef.current.value = "";
+    if (folderInputRef.current) folderInputRef.current.value = "";
 
     if (callBackend) {
       try {
@@ -261,7 +296,7 @@ export default function HybridAnalyze() {
     }
   };
 
-  const progressPercent =
+  const progress =
     status.total > 0
       ? Math.round(((status.processed || 0) / status.total) * 100)
       : 0;
@@ -269,6 +304,8 @@ export default function HybridAnalyze() {
   const downloadUrl = status.download_url
     ? getHybridDownloadUrl(status.download_url)
     : "";
+
+  const tokenUsage = status.token_usage || {};
 
   return (
     <div className="hybrid-page">
@@ -279,84 +316,123 @@ export default function HybridAnalyze() {
       <header className="hybrid-topbar">
         <div className="hybrid-brand">
           <div className="hybrid-logo">AI</div>
-
           <div>
             <span className="hybrid-small-badge">Balanced Screening Engine</span>
             <h1>Hybrid Resume Review</h1>
-            <p>
-              A cost-aware screening flow that combines local resume parsing,
-              requirement pre-filtering, and focused AI review for final matching.
-            </p>
+            <p>Requirement Excel + resumes, separate from High Accuracy mode.</p>
           </div>
         </div>
 
-        <button className="hybrid-back-btn" onClick={() => navigate("/")}>
-          Back to Dashboard
+        <button className="hybrid-back-btn" onClick={() => navigate("/main-ai")}>
+          Back to Main
         </button>
       </header>
 
       <main className="hybrid-container">
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            flexWrap: "wrap",
+            marginBottom: "18px",
+          }}
+        >
+          <button
+            className="hybrid-secondary-btn"
+            type="button"
+            onClick={() => navigate("/main-ai")}
+          >
+            High Accuracy Mode
+          </button>
+
+          <button className="hybrid-primary-btn" type="button">
+            Hybrid Mode
+          </button>
+
+          <button
+            className="hybrid-secondary-btn"
+            type="button"
+            onClick={() => navigate("/lowcost-ai")}
+          >
+            Run Low Cost Mode
+          </button>
+        </div>
+
         <section className="hybrid-shell">
           <div className="hybrid-hero">
             <div className="hybrid-hero-copy">
               <span className="hybrid-section-label">HYBRID ENGINE</span>
-
-              <h2>
-                Review resumes with
-                <br />
-                balanced cost and accuracy.
-              </h2>
-
+              <h2>Run Hybrid Resume Matching</h2>
               <p>
-                Use this engine when you want a cleaner balance between deep
-                screening quality and controlled AI usage. Requirement Excel should
-                already be uploaded from the main dashboard.
+                Upload Requirement Excel and resume folder here. Hybrid uses
+                local text extraction and shortlist logic before AI matching.
               </p>
 
               <div className="hybrid-hero-actions">
                 <button
-                  className="hybrid-primary-btn"
-                  onClick={openFolderPicker}
+                  className="hybrid-secondary-btn"
+                  onClick={openRequirementPicker}
                   disabled={uploading}
                 >
-                  {selectedFiles.length > 0
-                    ? "Change resume folder"
-                    : "Select resume folder"}
+                  Select Requirement Excel
                 </button>
 
                 <button
                   className="hybrid-secondary-btn"
-                  onClick={() => navigate("/")}
+                  onClick={openFolderPicker}
+                  disabled={uploading}
                 >
-                  Change requirement Excel
+                  Select Resume Folder
+                </button>
+
+                <button
+                  className="hybrid-primary-btn"
+                  onClick={startHybrid}
+                  disabled={uploading || !requirementFile || !selectedFiles.length}
+                >
+                  {uploading ? "Running..." : "Start Hybrid Review"}
                 </button>
               </div>
+
+              <input
+                ref={requirementInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hybrid-hidden-input"
+                onChange={handleRequirementChange}
+              />
+
+              <input
+                ref={folderInputRef}
+                type="file"
+                className="hybrid-hidden-input"
+                webkitdirectory="true"
+                directory="true"
+                multiple
+                onChange={handleFolderChange}
+              />
             </div>
 
             <div className="hybrid-status-panel">
               <div className="hybrid-status-top">
-                <span>Review Setup</span>
+                <span>Status</span>
                 <b>{uploading ? "Running" : processed ? "Completed" : "Ready"}</b>
               </div>
 
               <div className="hybrid-flow-list">
-                <div className="hybrid-flow-item done">
+                <div className={requirementFile ? "hybrid-flow-item done" : "hybrid-flow-item"}>
                   <span>01</span>
                   <div>
-                    <strong>Requirement Sheet</strong>
-                    <p>Loaded from main dashboard</p>
+                    <strong>Requirement Excel</strong>
+                    <p>{requirementFile ? requirementFile.name : "Not selected"}</p>
                   </div>
                 </div>
 
                 <div className={selectedFiles.length ? "hybrid-flow-item done" : "hybrid-flow-item"}>
                   <span>02</span>
                   <div>
-                    <strong>Resume Folder</strong>
-                    <p>
-                      {selectedFiles.length
-                        ? `${selectedFiles.length} files selected`
-                        : "Waiting for resumes"}
-                    </p>
+                    <strong>Resume Files</strong>
+                    <p>{selectedFiles.length ? `${selectedFiles.length} files selected` : "Not selected"}</p>
                   </div>
                 </div>
 
@@ -364,7 +440,7 @@ export default function HybridAnalyze() {
                   <span>03</span>
                   <div>
                     <strong>Hybrid Excel</strong>
-                    <p>{processed ? "Report generated" : "Generated after review"}</p>
+                    <p>{processed ? "Output ready" : "Waiting"}</p>
                   </div>
                 </div>
               </div>
@@ -373,235 +449,139 @@ export default function HybridAnalyze() {
 
           <section className="hybrid-info-grid">
             <div className="hybrid-info-card">
-              <span>Engine Type</span>
+              <span>Mode</span>
               <strong>Hybrid</strong>
-              <p>Balanced review mode</p>
+              <p>Balanced cost and accuracy.</p>
             </div>
-
-           
-
             <div className="hybrid-info-card">
-              <span>Selected Files</span>
-              <strong>{selectedFiles.length}</strong>
-              <p>PDF / DOCX resumes</p>
+              <span>Input</span>
+              <strong>XLSX + Resumes</strong>
+              <p>PDF, DOCX and DOC supported.</p>
             </div>
           </section>
 
-          <section className="hybrid-card">
-            <div className="hybrid-card-head">
-              <div>
-                <span className="hybrid-section-label">UPLOAD RESUMES</span>
-                <h2>Start hybrid resume review</h2>
-                <p>
-                  Upload the same resume folder here to process it through the
-                  hybrid engine. This produces a separate output for comparison.
-                </p>
+          {error && <div className="hybrid-error">{error}</div>}
+
+          {(uploading || status.status === "queued" || status.status === "processing") && (
+            <section className="hybrid-running-card">
+              <div className="hybrid-running-top">
+                <div>
+                  <span className="hybrid-section-label">RUNNING</span>
+                  <h3>Hybrid review in progress</h3>
+                  <p>{status.message || "Processing resumes..."}</p>
+                </div>
+                <strong>{progress}%</strong>
               </div>
 
-              <button className="hybrid-secondary-btn" onClick={() => navigate("/")}>
-                Main Dashboard
-              </button>
-            </div>
+              <div className="hybrid-progress-bar">
+                <span style={{ width: `${progress}%` }} />
+              </div>
 
-            {!processed && (
-              <>
-                <input
-                  ref={folderInputRef}
-                  type="file"
-                  multiple
-                  webkitdirectory="true"
-                  directory="true"
-                  accept=".pdf,.docx"
-                  className="hybrid-hidden-input"
-                  onChange={handleFolderChange}
-                />
-
-                <button
-                  className="hybrid-upload-box"
-                  onClick={openFolderPicker}
-                  disabled={uploading}
-                >
-                  <div className="hybrid-upload-icon">AI</div>
-
-                  <strong>
-                    {selectedFiles.length > 0
-                      ? `${selectedFiles.length} resume files selected`
-                      : "Select resume folder"}
-                  </strong>
-
-                  <span>Supports PDF and DOCX resumes</span>
-                </button>
-
-                {selectedFiles.length > 0 && (
-                  <div className="hybrid-file-list">
-                    <h3>Selected Files</h3>
-
-                    {selectedFiles.slice(0, 15).map((file, index) => (
-                      <div key={`${file.name}-${index}`}>
-                        <span>{file.webkitRelativePath || file.name}</span>
-                        <small>{(file.size / (1024 * 1024)).toFixed(2)} MB</small>
-                      </div>
-                    ))}
-
-                    {selectedFiles.length > 15 && (
-                      <div>
-                        <span>+ {selectedFiles.length - 15} more files</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-
-            {error && <div className="hybrid-error">{error}</div>}
-
-            {uploading && (
-              <section className="hybrid-running-card">
-                <div className="hybrid-running-top">
-                  <div>
-                    <span className="hybrid-section-label">RUNNING</span>
-                    <h3>Hybrid review in progress</h3>
-                    <p>{status.message || "Processing resumes..."}</p>
-                  </div>
-
-                  <strong>{progressPercent}%</strong>
-                </div>
-
-                <div className="hybrid-progress-bar">
-                  <span style={{ width: `${progressPercent}%` }} />
-                </div>
-
-                <div className="hybrid-runtime-grid">
-                  <div>
-                    <span>Progress</span>
-                    <strong>
-                      {status.processed || 0} / {status.total || selectedFiles.length}
-                    </strong>
-                  </div>
-
-                  <div>
-                    <span>Successful</span>
-                    <strong>{status.successful || 0}</strong>
-                  </div>
-
-                  <div>
-                    <span>Skipped</span>
-                    <strong>{status.skipped || 0}</strong>
-                  </div>
-
-                  <div>
-                    <span>Failed</span>
-                    <strong>{status.failed || 0}</strong>
-                  </div>
-                </div>
-
-                {status.current_file && (
-                  <p className="hybrid-note">
-                    Current file: <strong>{status.current_file}</strong>
-                  </p>
-                )}
-              </section>
-            )}
-
-            {processed && (
-              <section className="hybrid-success-card">
-                <div className="hybrid-complete-icon"></div>
-
-                <h2>Hybrid review completed</h2>
-
-                <p>
-                  Hybrid output Excel has been generated successfully for comparison
-                  with the main screening output.
-                </p>
-
-                <div className="hybrid-result-grid">
-                  <div>
-                    <span>Total Files</span>
-                    <strong>{status.total || selectedFiles.length}</strong>
-                  </div>
-
-                  <div>
-                    <span>Processed</span>
-                    <strong>{status.processed || 0}</strong>
-                  </div>
-
-                  <div>
-                    <span>Successful</span>
-                    <strong>{status.successful || 0}</strong>
-                  </div>
-
-                  <div>
-                    <span>Time</span>
-                    <strong>{status.processing_time_seconds || 0}s</strong>
-                  </div>
-                </div>
-
-                <div className="hybrid-actions">
-                  {downloadUrl && (
-                    <a
-                      className="hybrid-download-btn"
-                      href={downloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Download Hybrid Excel
-                    </a>
-                  )}
-
-                  <button
-                    className="hybrid-secondary-btn"
-                    onClick={() => handleReset(true)}
-                  >
-                    Process Another Folder
-                  </button>
-                </div>
-              </section>
-            )}
-          </section>
-
-          { processed && (
-            <section className="hybrid-cost-card">
-              <span className="hybrid-section-label">COST SUMMARY</span>
-              <h3>Token usage and estimated cost</h3>
-
-              <div className="hybrid-cost-grid">
+              <div className="hybrid-runtime-grid">
                 <div>
-                  <h4>{Number(status.token_usage?.input_tokens || 0).toLocaleString()}</h4>
-                  <p>Input Tokens</p>
+                  <span>Processed</span>
+                  <strong>{status.processed || 0} / {status.total || selectedFiles.length}</strong>
                 </div>
-
                 <div>
-                  <h4>{Number(status.token_usage?.output_tokens || 0).toLocaleString()}</h4>
-                  <p>Output Tokens</p>
+                  <span>Success</span>
+                  <strong>{status.successful || 0}</strong>
                 </div>
-
                 <div>
-                  <h4>{Number(status.token_usage?.total_tokens || 0).toLocaleString()}</h4>
-                  <p>Total Tokens</p>
+                  <span>Skipped</span>
+                  <strong>{status.skipped || 0}</strong>
                 </div>
-
                 <div>
-                  <h4>${Number(status.token_usage?.cost_usd || 0).toFixed(4)}</h4>
-                  <p>Estimated USD</p>
-                </div>
-
-                <div>
-                  <h4>INR {Number(status.token_usage?.cost_inr || 0).toFixed(2)}</h4>
-                  <p>Estimated INR</p>
-                </div>
-
-                <div>
-                  <h4>INR {Number(status.token_usage?.cost_per_resume_inr || 0).toFixed(2)}</h4>
-                  <p>Cost / Resume</p>
+                  <span>Failed</span>
+                  <strong>{status.failed || 0}</strong>
                 </div>
               </div>
 
-              <p className="hybrid-note">
-                Hybrid review reduces AI usage by doing resume extraction and
-                requirement pre-filtering before the final AI matching step.
-              </p>
+              {status.current_file && (
+                <p className="hybrid-note">
+                  Current file: <strong>{status.current_file}</strong>
+                </p>
+              )}
             </section>
           )}
+
+          {processed && (
+            <section className="hybrid-success-card">
+              <div className="hybrid-complete-icon"></div>
+              <h2>Hybrid review completed</h2>
+              <p>Hybrid output Excel has been generated successfully.</p>
+
+              <div className="hybrid-result-grid">
+                <div>
+                  <span>Total</span>
+                  <strong>{status.total || selectedFiles.length}</strong>
+                </div>
+                <div>
+                  <span>Processed</span>
+                  <strong>{status.processed || 0}</strong>
+                </div>
+                <div>
+                  <span>Success</span>
+                  <strong>{status.successful || 0}</strong>
+                </div>
+                <div>
+                  <span>Time</span>
+                  <strong>{status.processing_time_text || `${status.processing_time_seconds || 0}s`}</strong>
+                </div>
+              </div>
+
+              <div className="hybrid-actions">
+                {downloadUrl && (
+                  <a
+                    className="hybrid-download-btn"
+                    href={downloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Download Hybrid Excel
+                  </a>
+                )}
+
+                <button
+                  className="hybrid-secondary-btn"
+                  onClick={() => handleReset(true)}
+                >
+                  Run Another Hybrid Batch
+                </button>
+              </div>
+            </section>
+          )}
+
+          <section className="hybrid-cost-card">
+            <span className="hybrid-section-label">COST SUMMARY</span>
+            <h3>Hybrid token and cost usage</h3>
+
+            <div className="hybrid-cost-grid">
+              <div>
+                <span>Input Tokens</span>
+                <h4>{Number(tokenUsage.input_tokens || 0).toLocaleString("en-IN")}</h4>
+              </div>
+              <div>
+                <span>Output Tokens</span>
+                <h4>{Number(tokenUsage.output_tokens || 0).toLocaleString("en-IN")}</h4>
+              </div>
+              <div>
+                <span>Total Tokens</span>
+                <h4>{Number(tokenUsage.total_tokens || 0).toLocaleString("en-IN")}</h4>
+              </div>
+              <div>
+                <span>Cost USD</span>
+                <h4>${Number(tokenUsage.cost_usd || 0).toFixed(4)}</h4>
+              </div>
+              <div>
+                <span>Cost INR</span>
+                <h4>{Number(tokenUsage.cost_inr || 0).toFixed(2)}</h4>
+              </div>
+              <div>
+                <span>Cost / Resume</span>
+                <h4>{Number(tokenUsage.cost_per_resume_inr || 0).toFixed(2)}</h4>
+              </div>
+            </div>
+          </section>
 
           {Array.isArray(status.recent_logs) && status.recent_logs.length > 0 && (
             <section className="hybrid-log-card">
@@ -610,9 +590,9 @@ export default function HybridAnalyze() {
 
               <div className="hybrid-log-list">
                 {status.recent_logs.map((log, index) => (
-                  <div key={index}>
-                    <span>{log.time || log.ts || "-"}</span>
-                    <p>{log.message || log.msg || "-"}</p>
+                  <div className="hybrid-log-item" key={`${log.time || index}-${index}`}>
+                    <span>{log.time || "-"}</span>
+                    <p>{log.message || String(log)}</p>
                   </div>
                 ))}
               </div>

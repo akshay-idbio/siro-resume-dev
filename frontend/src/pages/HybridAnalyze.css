@@ -77,7 +77,7 @@
   font-weight: 900;
   letter-spacing: 1px;
   box-shadow: 0 16px 30px rgba(32, 72, 68, 0.18);
-  backdrop-filter: blur(14px);
+  backdrop-filter: none;
 }
 
 .hybrid-small-badge,
@@ -93,7 +93,7 @@
   font-weight: 900;
   letter-spacing: 1.35px;
   text-transform: uppercase;
-  backdrop-filter: blur(16px);
+  backdrop-filter: none;
 }
 
 .hybrid-topbar h1 {
@@ -124,7 +124,7 @@
   font-size: 13px;
   font-weight: 800;
   box-shadow: 0 14px 30px rgba(20, 44, 55, 0.08);
-  backdrop-filter: blur(18px);
+  backdrop-filter: none;
   transition: 0.2s ease;
 }
 
@@ -153,7 +153,7 @@
   box-shadow:
     0 46px 110px rgba(20, 44, 55, 0.24),
     0 18px 44px rgba(20, 44, 55, 0.12);
-  backdrop-filter: blur(20px);
+  backdrop-filter: none;
   animation: hybridEnter 0.7s ease both;
 }
 
@@ -172,7 +172,7 @@
   position: absolute;
   inset: 0;
   background: rgba(245, 249, 248, 0.2);
-  backdrop-filter: blur(1px);
+  backdrop-filter: none;
   pointer-events: none;
 }
 
@@ -263,7 +263,7 @@
   color: #315c57;
   border: 1px solid rgba(255, 255, 255, 0.62);
   box-shadow: 0 14px 28px rgba(20, 44, 55, 0.08);
-  backdrop-filter: blur(14px);
+  backdrop-filter: none;
 }
 
 .hybrid-secondary-btn:hover {
@@ -288,7 +288,7 @@
   box-shadow:
     0 28px 70px rgba(20, 44, 55, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.66);
-  backdrop-filter: blur(22px);
+  backdrop-filter: none;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -332,7 +332,7 @@
   background: rgba(255, 255, 255, 0.46);
   border: 1px solid rgba(255, 255, 255, 0.48);
   opacity: 0.74;
-  backdrop-filter: blur(16px);
+  backdrop-filter: none;
 }
 
 .hybrid-flow-item.done {
@@ -383,7 +383,7 @@
   box-shadow:
     0 20px 48px rgba(20, 44, 55, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(20px);
+  backdrop-filter: none;
 }
 
 .hybrid-info-card span {
@@ -423,7 +423,7 @@
   box-shadow:
     0 26px 72px rgba(20, 44, 55, 0.11),
     inset 0 1px 0 rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(24px);
+  backdrop-filter: none;
 }
 
 .hybrid-card-head {
@@ -485,7 +485,7 @@
   place-items: center;
   text-align: center;
   padding: 28px;
-  backdrop-filter: blur(18px);
+  backdrop-filter: none;
   transition: 0.22s ease;
 }
 
@@ -529,7 +529,7 @@
   background: rgba(255, 255, 255, 0.48);
   border: 1px solid rgba(255, 255, 255, 0.58);
   border-radius: 22px;
-  backdrop-filter: blur(18px);
+  backdrop-filter: none;
 }
 
 .hybrid-file-list h3 {
@@ -559,7 +559,7 @@
   color: #be123c;
   font-size: 13px;
   font-weight: 750;
-  backdrop-filter: blur(14px);
+  backdrop-filter: none;
 }
 
 .hybrid-running-card,
@@ -621,7 +621,7 @@
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.48);
   border: 1px solid rgba(255, 255, 255, 0.58);
-  backdrop-filter: blur(18px);
+  backdrop-filter: none;
 }
 
 .hybrid-runtime-grid span,
@@ -693,7 +693,7 @@
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.48);
   border: 1px solid rgba(255, 255, 255, 0.58);
-  backdrop-filter: blur(18px);
+  backdrop-filter: none;
 }
 
 .hybrid-log-list span {
@@ -804,4 +804,68 @@
   .hybrid-log-list div {
     grid-template-columns: 1fr;
   }
+}
+/* Simple clean UI override like Main AI mode */
+.hybrid-page {
+  background: #f8fafc !important;
+}
+
+.hybrid-bg-block,
+.hybrid-block-one,
+.hybrid-block-two,
+.hybrid-block-three {
+  display: none !important;
+}
+
+.hybrid-shell,
+.hybrid-success-card,
+.hybrid-cost-card,
+.hybrid-log-card,
+.hybrid-running-card,
+.hybrid-info-card,
+.hybrid-status-panel {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08) !important;
+}
+
+.hybrid-shell::before,
+.hybrid-shell::after,
+.hybrid-success-card::before,
+.hybrid-success-card::after,
+.hybrid-cost-card::before,
+.hybrid-cost-card::after,
+.hybrid-log-card::before,
+.hybrid-log-card::after {
+  display: none !important;
+}
+
+.hybrid-cost-grid > div,
+.hybrid-result-grid > div,
+.hybrid-runtime-grid > div {
+  background: #f8fafc !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+.hybrid-cost-grid h4,
+.hybrid-result-grid strong,
+.hybrid-runtime-grid strong {
+  color: #0f172a !important;
+}
+
+.hybrid-cost-grid span,
+.hybrid-result-grid span,
+.hybrid-runtime-grid span {
+  color: #64748b !important;
+}
+
+/* Manager demo: hide mode switch buttons */
+.mode-switch-row {
+  display: none !important;
 }

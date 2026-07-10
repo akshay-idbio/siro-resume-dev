@@ -49,7 +49,28 @@ export default function LowCostAnalyze() {
   const [status, setStatus] = useState(emptyStatus);
 
   useEffect(() => {
-    return () => {
+    return () =>
+
+          <div className="mode-switch-row">
+            <button
+              className="mode-switch-btn"
+              type="button"
+              onClick={() => navigate("/main-ai")}
+            >
+              High Accuracy Mode
+            </button>
+            <button
+              className="mode-switch-btn"
+              type="button"
+              onClick={() => navigate("/hybrid-ai")}
+            >
+              Run Hybrid Mode
+            </button>
+            <button className="mode-switch-btn active" type="button">
+              Low Cost Mode
+            </button>
+          </div>
+ {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
       }
@@ -600,21 +621,48 @@ export default function LowCostAnalyze() {
               <div className="lowcost-cost-grid">
                 <div>
                   <h4>
-                    {Number(status.token_usage?.input_tokens || 0).toLocaleString()}
+                    {Number(status.token_usage?.input_tokens || 0).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })}
                   </h4>
                   <p>Input Tokens</p>
                 </div>
 
                 <div>
                   <h4>
-                    {Number(status.token_usage?.output_tokens || 0).toLocaleString()}
+                    {Number(status.token_usage?.output_tokens || 0).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })}
                   </h4>
                   <p>Output Tokens</p>
                 </div>
 
                 <div>
                   <h4>
-                    {Number(status.token_usage?.total_tokens || 0).toLocaleString()}
+                    {Number(status.token_usage?.total_tokens || 0).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })}
                   </h4>
                   <p>Total Tokens</p>
                 </div>

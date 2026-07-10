@@ -10,3 +10,8 @@ pydantic-settings
 PyMuPDF
 pypdf
 python-docx
+motor
+pymongo
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt==4.0.1

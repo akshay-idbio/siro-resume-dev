@@ -1,0 +1,13 @@
+frontend/node_modules
+frontend/dist
+__pycache__
+*.pyc
+.git
+.env.local
+storage
+output
+hybrid_jobs
+lowcost_jobs
+*.tar.gz
+*_backup_*
+*.log
