@@ -113,27 +113,91 @@ export async function getJobs(limit = 50) {
   }
 }
 
-export async function createJob({ mode = "main_ai", requirementFile, resumes }) {
+export async function createJob({
+  mode = "main_ai",
+  requirementFile,
+  expectedResumes,
+}) {
   try {
     const formData = new FormData();
 
     formData.append("mode", mode);
     formData.append("requirement_file", requirementFile);
+    formData.append(
+      "expected_resumes",
+      String(expectedResumes)
+    );
+
+    const response = await api.post(
+      "/jobs/create",
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        timeout: 0,
+      }
+    );
+
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      getApiError(error, "Job creation failed")
+    );
+  }
+}
+
+
+export async function uploadResumeBatch({
+  jobId,
+  batchId,
+  resumes,
+  onUploadProgress,
+}) {
+  try {
+    const formData = new FormData();
+    formData.append("batch_id", batchId);
 
     Array.from(resumes || []).forEach((file) => {
       formData.append("resumes", file);
     });
 
-    const response = await api.post("/jobs/create", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-      timeout: 120000,
-    });
+    const response = await api.post(
+      `/jobs/${jobId}/resumes/upload`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        timeout: 0,
+
+        onUploadProgress: (progressEvent) => {
+          if (typeof onUploadProgress !== "function") {
+            return;
+          }
+
+          const total = progressEvent.total || 0;
+          const loaded = progressEvent.loaded || 0;
+
+          const percentage =
+            total > 0
+              ? Math.round((loaded * 100) / total)
+              : 0;
+
+          onUploadProgress({
+            loaded,
+            total,
+            percentage,
+          });
+        },
+      }
+    );
 
     return response.data;
   } catch (error) {
-    throw new Error(getApiError(error, "Job upload failed"));
+    throw new Error(
+      getApiError(error, "Resume batch upload failed")
+    );
   }
 }
 

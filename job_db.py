@@ -95,6 +95,10 @@ async def create_job(
         "temp_dir": folders["temp_dir"],
 
         "total_resumes": int(total_resumes or 0),
+        "expected_resumes": int(total_resumes or 0),
+        "uploaded_resumes": 0,
+        "upload_status": "uploading",
+        "uploaded_batch_ids": [],
         "processed": 0,
         "successful": 0,
         "failed": 0,
@@ -119,6 +123,79 @@ async def create_job(
     await jobs_col.insert_one(doc)
     return job_id
 
+
+async def update_job_upload_state(
+    job_id: str,
+    uploaded_delta: int = 0,
+    expected_resumes: Optional[int] = None,
+    upload_status: Optional[str] = None,
+    message: Optional[str] = None,
+):
+    set_data = {
+        "updated_at": utc_now(),
+    }
+
+    inc_data = {}
+
+    if uploaded_delta:
+        inc_data["uploaded_resumes"] = int(uploaded_delta)
+        inc_data["total_resumes"] = int(uploaded_delta)
+
+    if expected_resumes is not None:
+        set_data["expected_resumes"] = int(expected_resumes)
+
+    if upload_status is not None:
+        set_data["upload_status"] = upload_status
+
+    if message is not None:
+        set_data["message"] = message
+
+    update_query = {
+        "$set": set_data,
+    }
+
+    if inc_data:
+        update_query["$inc"] = inc_data
+
+    await jobs_col.update_one(
+        {"job_id": job_id},
+        update_query,
+    )
+
+
+async def mark_upload_batch_completed(
+    job_id: str,
+    batch_id: str,
+    uploaded_count: int,
+    upload_complete: bool = False,
+    message: Optional[str] = None,
+):
+    set_data = {
+        "updated_at": utc_now(),
+        "upload_status": "completed" if upload_complete else "uploading",
+    }
+
+    if message is not None:
+        set_data["message"] = message
+
+    result = await jobs_col.update_one(
+        {
+            "job_id": job_id,
+            "uploaded_batch_ids": {"$ne": batch_id},
+        },
+        {
+            "$addToSet": {
+                "uploaded_batch_ids": batch_id,
+            },
+            "$inc": {
+                "uploaded_resumes": int(uploaded_count),
+                "total_resumes": int(uploaded_count),
+            },
+            "$set": set_data,
+        },
+    )
+
+    return result.modified_count == 1
 
 async def mark_job_processing(job_id: str):
     await jobs_col.update_one(

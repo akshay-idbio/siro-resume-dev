@@ -7,12 +7,19 @@ from typing import List
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 
 from auth import get_current_user
+
+
+
+
 from job_db import (
     create_job,
     get_job_by_id,
+    get_user_job_by_id,
     create_job_resume,
     safe_filename,
     get_active_user_job,
+    update_job_upload_state,
+    mark_upload_batch_completed,
 )
 
 
@@ -172,24 +179,26 @@ async def save_upload_file(upload_file: UploadFile, destination_path: str):
     with open(destination_path, "wb") as buffer:
         shutil.copyfileobj(upload_file.file, buffer)
 
-
 @job_upload_router.post("/create")
 async def create_upload_job(
     mode: str = Form("main_ai"),
     requirement_file: UploadFile = File(...),
-    resumes: List[UploadFile] = File(...),
+    expected_resumes: int = Form(...),
     current_user: dict = Depends(get_current_user),
 ):
     user_id = str(current_user["_id"])
-
     mode = (mode or "main_ai").strip().lower()
 
     active_job = await get_active_user_job(user_id)
+
     if active_job:
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "You already have one job running. Please wait until it completes before starting another job.",
+                "message": (
+                    "You already have one job running. "
+                    "Please wait until it completes before starting another job."
+                ),
                 "active_job_id": active_job.get("job_id"),
                 "active_job_status": active_job.get("status"),
             },
@@ -201,58 +210,204 @@ async def create_upload_job(
             detail=f"Invalid mode. Allowed modes: {sorted(ALLOWED_MODES)}",
         )
 
-    if not resumes:
-        raise HTTPException(status_code=400, detail="At least one resume is required")
+    expected_resumes = int(expected_resumes or 0)
+
+    if expected_resumes <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one resume is required",
+        )
+
+    if expected_resumes > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 1000 resumes are allowed in one job",
+        )
 
     validate_requirement_file(requirement_file)
     validate_requirement_excel_content(requirement_file)
-
-    for resume in resumes:
-        validate_resume_file(resume)
 
     safe_req_name = safe_filename(
         requirement_file.filename,
         fallback="uploaded_requirement.xlsx",
     )
 
-    # 1. Create DB job + storage folders
+    # Create empty job first.
     job_id = await create_job(
         user_id=user_id,
         mode=mode,
-        total_resumes=len(resumes),
+        total_resumes=0,
         requirement_filename=safe_req_name,
+    )
+
+    await update_job_upload_state(
+        job_id=job_id,
+        expected_resumes=expected_resumes,
+        upload_status="uploading",
+        message="Job created. Resume upload is in progress.",
     )
 
     job = await get_job_by_id(job_id)
 
     if not job:
-        raise HTTPException(status_code=500, detail="Job creation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Job creation failed",
+        )
 
-    requirement_path = os.path.join(job["requirement_dir"], safe_req_name)
+    requirement_path = os.path.join(
+        job["requirement_dir"],
+        safe_req_name,
+    )
 
-    # 2. Save requirement file into this user/job folder
-    await save_upload_file(requirement_file, requirement_path)
+    await save_upload_file(
+        requirement_file,
+        requirement_path,
+    )
 
-    # 3. Save resumes into this user/job folder and create DB records
+    return {
+        "success": True,
+        "message": "Job created. Upload resumes in batches.",
+        "job_id": job_id,
+        "mode": mode,
+        "expected_resumes": expected_resumes,
+        "uploaded_resumes": 0,
+        "upload_status": "uploading",
+        "requirement_file": {
+            "filename": safe_req_name,
+            "file_path": requirement_path,
+        },
+    }
+
+
+
+@job_upload_router.post("/{job_id}/resumes/upload")
+async def upload_resume_batch(
+    job_id: str,
+    batch_id: str = Form(...),
+    resumes: List[UploadFile] = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = str(current_user["_id"])
+
+    batch_id = str(batch_id or "").strip()
+
+    if not batch_id:
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required",
+        )
+
+    job = await get_user_job_by_id(
+        user_id=user_id,
+        job_id=job_id,
+    )
+
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found",
+        )
+    
+
+    uploaded_batch_ids = set(
+        job.get("uploaded_batch_ids") or []
+    )
+
+    if batch_id in uploaded_batch_ids:
+        return {
+            "success": True,
+            "job_id": job_id,
+            "batch_id": batch_id,
+            "already_uploaded": True,
+            "batch_uploaded": 0,
+            "uploaded_resumes": int(
+                job.get("uploaded_resumes") or 0
+            ),
+            "expected_resumes": int(
+                job.get("expected_resumes") or 0
+            ),
+            "upload_complete": (
+                int(job.get("uploaded_resumes") or 0)
+                == int(job.get("expected_resumes") or 0)
+            ),
+            "message": "This batch was already uploaded successfully.",
+        }
+
+    if job.get("status") not in {"queued"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Resume upload is not allowed after processing has started",
+        )
+
+    if not resumes:
+        raise HTTPException(
+            status_code=400,
+            detail="No resumes received",
+        )
+
+    if len(resumes) > 25:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 25 resumes are allowed per upload batch",
+        )
+
+    expected_resumes = int(
+        job.get("expected_resumes") or 0
+    )
+
+    uploaded_resumes = int(
+        job.get("uploaded_resumes") or 0
+    )
+
+    if uploaded_resumes + len(resumes) > expected_resumes:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Uploaded resumes exceed the expected resume count.",
+                "expected_resumes": expected_resumes,
+                "already_uploaded": uploaded_resumes,
+                "current_batch": len(resumes),
+            },
+        )
+
+    for resume in resumes:
+        validate_resume_file(resume)
+
     saved_resumes = []
 
-    for index, resume in enumerate(resumes, start=1):
-        original_resume_name = os.path.basename(resume.filename or f"resume_{index}.pdf")
+    for offset, resume in enumerate(resumes, start=1):
+        index = uploaded_resumes + offset
+
+        original_resume_name = os.path.basename(
+            resume.filename or f"resume_{index}.pdf"
+        )
 
         safe_resume_name = safe_filename(
             original_resume_name,
             fallback=f"resume_{index}.pdf",
         )
 
-        resume_path = os.path.join(job["resumes_dir"], safe_resume_name)
+        # Avoid overwriting files having the same name.
+        stored_resume_name = (
+            f"{index:05d}_{safe_resume_name}"
+        )
 
-        await save_upload_file(resume, resume_path)
+        resume_path = os.path.join(
+            job["resumes_dir"],
+            stored_resume_name,
+        )
+
+        await save_upload_file(
+            resume,
+            resume_path,
+        )
 
         await create_job_resume(
             job_id=job_id,
             user_id=user_id,
             filename=original_resume_name,
-            stored_filename=safe_resume_name,
+            stored_filename=stored_resume_name,
             file_path=resume_path,
             index=index,
         )
@@ -261,28 +416,61 @@ async def create_upload_job(
             {
                 "index": index,
                 "filename": original_resume_name,
-                "stored_filename": safe_resume_name,
-                "file_path": resume_path,
+                "stored_filename": stored_resume_name,
             }
         )
 
+    newly_uploaded = len(saved_resumes)
+    final_uploaded_count = uploaded_resumes + newly_uploaded
+
+    upload_complete = (
+        final_uploaded_count == expected_resumes
+    )
+
+    batch_marked = await mark_upload_batch_completed(
+        job_id=job_id,
+        batch_id=batch_id,
+        uploaded_count=newly_uploaded,
+        upload_complete=upload_complete,
+        message=(
+            "All resumes uploaded successfully."
+            if upload_complete
+            else (
+                f"{final_uploaded_count} of "
+                f"{expected_resumes} resumes uploaded."
+            )
+        ),
+    )
+
+    # Another request may already have completed this same batch.
+    # Read the latest MongoDB counters before sending the response.
+    if not batch_marked:
+        latest_job = await get_user_job_by_id(
+            user_id=user_id,
+            job_id=job_id,
+        )
+
+        if latest_job:
+            final_uploaded_count = int(
+                latest_job.get("uploaded_resumes") or 0
+            )
+
+            upload_complete = (
+                final_uploaded_count == expected_resumes
+            )
+
     return {
         "success": True,
-        "message": "Job created and files uploaded successfully",
         "job_id": job_id,
-        "mode": mode,
-        "user_id": user_id,
-        "total_resumes": len(saved_resumes),
-        "requirement_file": {
-            "filename": safe_req_name,
-            "file_path": requirement_path,
-        },
-        "storage": {
-            "storage_dir": job["storage_dir"],
-            "requirement_dir": job["requirement_dir"],
-            "resumes_dir": job["resumes_dir"],
-            "outputs_dir": job["outputs_dir"],
-            "temp_dir": job["temp_dir"],
-        },
-        "resumes": saved_resumes,
+        "batch_id": batch_id,
+        "already_uploaded": not batch_marked,
+        "batch_uploaded": (
+            newly_uploaded if batch_marked else 0
+        ),
+        "uploaded_resumes": final_uploaded_count,
+        "expected_resumes": expected_resumes,
+        "upload_complete": upload_complete,
+        "resumes": (
+            saved_resumes if batch_marked else []
+        ),
     }

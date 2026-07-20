@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+
 import {
   clearAuthSession,
   createJob,
@@ -10,6 +12,7 @@ import {
   getJobResumes,
   getJobs,
   startJob,
+  uploadResumeBatch,
 } from "../api/api";
 import config from "../config";
 import "./MainAiAnalyze.css";
@@ -94,6 +97,9 @@ const getAverageResumeTime = (job) => {
 
 
 const POLL_MS = 5000;
+const UPLOAD_BATCH_SIZE = 25;
+const MAX_RESUMES_PER_JOB = 1000;
+const MAX_UPLOAD_RETRIES = 3;
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-IN");
@@ -131,6 +137,11 @@ export default function MainAiAnalyze() {
   const [creating, setCreating] = useState(false);
   const [starting, setStarting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedCount, setUploadedCount] = useState(0);
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const [currentBatch, setCurrentBatch] = useState(0);
+  const [totalBatches, setTotalBatches] = useState(0);
 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -225,6 +236,61 @@ export default function MainAiAnalyze() {
     setError("");
   };
 
+  const uploadBatchWithRetry = async ({
+    jobId,
+    batchFiles,
+    batchNumber,
+    totalBatchCount,
+  }) => {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt += 1) {
+      try {
+        setNotice(
+          `Uploading batch ${batchNumber} of ${totalBatchCount} ` +
+          `(attempt ${attempt})...`
+        );
+
+        const batchId = `${jobId}_batch_${batchNumber}`;
+
+        return await uploadResumeBatch({
+          jobId,
+          batchId,
+          resumes: batchFiles,
+          onUploadProgress: ({ percentage }) => {
+            const completedBeforeBatch =
+              (batchNumber - 1) * UPLOAD_BATCH_SIZE;
+
+            const currentBatchEquivalent =
+              (percentage / 100) * batchFiles.length;
+
+            const estimatedUploaded =
+              completedBeforeBatch + currentBatchEquivalent;
+
+            const overallPercent = Math.min(
+              100,
+              Math.round(
+                (estimatedUploaded / resumeFiles.length) * 100
+              )
+            );
+
+            setUploadPercent(overallPercent);
+          },
+        });
+      } catch (error) {
+        lastError = error;
+
+        if (attempt < MAX_UPLOAD_RETRIES) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, attempt * 2000);
+          });
+        }
+      }
+    }
+
+    throw lastError || new Error("Resume batch upload failed");
+  };
+
   const handleCreateAndStart = async () => {
     if (!requirementFile) {
       setError("Please select requirement Excel first.");
@@ -236,16 +302,42 @@ export default function MainAiAnalyze() {
       return;
     }
 
+    if (resumeFiles.length > MAX_RESUMES_PER_JOB) {
+      setError(
+        `Maximum ${MAX_RESUMES_PER_JOB} resumes are allowed in one job.`
+      );
+      return;
+    }
+
+    const batches = [];
+
+    for (
+      let index = 0;
+      index < resumeFiles.length;
+      index += UPLOAD_BATCH_SIZE
+    ) {
+      batches.push(
+        resumeFiles.slice(index, index + UPLOAD_BATCH_SIZE)
+      );
+    }
+
     try {
       setCreating(true);
+      setUploading(true);
       setStarting(false);
+
       setError("");
-      setNotice("Uploading requirement and resumes...");
+      setUploadedCount(0);
+      setUploadPercent(0);
+      setCurrentBatch(0);
+      setTotalBatches(batches.length);
+
+      setNotice("Creating job and uploading requirement Excel...");
 
       const created = await createJob({
         mode: "main_ai",
         requirementFile,
-        resumes: resumeFiles,
+        expectedResumes: resumeFiles.length,
       });
 
       const jobId = created.job_id;
@@ -253,23 +345,66 @@ export default function MainAiAnalyze() {
       setActiveJobId(jobId);
       setNotice(`Job created: ${jobId}`);
 
-      await refreshJob(jobId);
-      await loadJobs();
+      for (
+        let batchIndex = 0;
+        batchIndex < batches.length;
+        batchIndex += 1
+      ) {
+        const batchNumber = batchIndex + 1;
+        const batchFiles = batches[batchIndex];
 
+        setCurrentBatch(batchNumber);
+
+        const uploadResult = await uploadBatchWithRetry({
+          jobId,
+          batchFiles,
+          batchNumber,
+          totalBatchCount: batches.length,
+        });
+
+        const uploaded =
+          Number(uploadResult.uploaded_resumes) || 0;
+
+        setUploadedCount(uploaded);
+
+        setUploadPercent(
+          Math.min(
+            100,
+            Math.round(
+              (uploaded / resumeFiles.length) * 100
+            )
+          )
+        );
+
+        setNotice(
+          `${uploaded} of ${resumeFiles.length} resumes uploaded`
+        );
+      }
+
+      setUploading(false);
       setCreating(false);
       setStarting(true);
-      setNotice("Starting background AI processing...");
+
+      setNotice("All resumes uploaded. Starting AI processing...");
 
       await startJob(jobId);
 
-      setNotice("Processing started in background. You can keep this page open and watch progress.");
+      setNotice(
+        "Processing started in background. You can watch progress below."
+      );
+
       await refreshJob(jobId);
+      await loadJobs();
       startPolling(jobId);
     } catch (err) {
       setNotice("");
-      setError(err.message || "Failed to create/start job");
+      setError(
+        err.message ||
+        "Failed while creating, uploading or starting job"
+      );
     } finally {
       setCreating(false);
+      setUploading(false);
       setStarting(false);
     }
   };
@@ -324,9 +459,9 @@ export default function MainAiAnalyze() {
         <div className="main-ai-user">
           <span>{user?.name || user?.email || "User"}</span>
           {user?.role === "admin" && (
-              <button onClick={() => navigate("/admin")}>Admin Dashboard</button>
-            )}
-            <button onClick={handleLogout}>Logout</button>
+            <button onClick={() => navigate("/admin")}>Admin Dashboard</button>
+          )}
+          <button onClick={handleLogout}>Logout</button>
         </div>
       </header>
 
@@ -369,25 +504,25 @@ export default function MainAiAnalyze() {
             <div className="card-title-row">
               <div>
 
-      <div className="mode-switch-row">
-        <button className="mode-switch-btn active" type="button">
-          High Accuracy Mode
-        </button>
-        <button
-          className="mode-switch-btn"
-          type="button"
-          onClick={() => navigate("/hybrid-ai")}
-        >
-          Run Hybrid Mode
-        </button>
-        <button
-          className="mode-switch-btn"
-          type="button"
-          onClick={() => navigate("/lowcost-ai")}
-        >
-          Run Low Cost Mode
-        </button>
-      </div>
+                <div className="mode-switch-row">
+                  <button className="mode-switch-btn active" type="button">
+                    High Accuracy Mode
+                  </button>
+                  <button
+                    className="mode-switch-btn"
+                    type="button"
+                    onClick={() => navigate("/hybrid-ai")}
+                  >
+                    Run Hybrid Mode
+                  </button>
+                  <button
+                    className="mode-switch-btn"
+                    type="button"
+                    onClick={() => navigate("/lowcost-ai")}
+                  >
+                    Run Low Cost Mode
+                  </button>
+                </div>
                 <h3>Create Main AI Job</h3>
                 <p>Select one requirement Excel and one or more resumes.</p>
               </div>
@@ -445,17 +580,41 @@ export default function MainAiAnalyze() {
                 {resumeFiles.length ? `${resumeFiles.length} selected` : "Not selected"}
               </p>
             </div>
+            {(creating || uploading || starting) && (
+              <div className="upload-progress-box">
+                <div className="progress-track">
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${uploadPercent}%` }}
+                  />
+                </div>
+
+                <div className="progress-meta">
+                  <span>
+                    Upload: {uploadedCount}/{resumeFiles.length}
+                  </span>
+
+                  <span>
+                    Batch {currentBatch}/{totalBatches}
+                  </span>
+
+                  <span>{uploadPercent}%</span>
+                </div>
+              </div>
+            )}
 
             <button
               className="primary-action"
-              disabled={creating || starting}
+              disabled={creating || uploading || starting}
               onClick={handleCreateAndStart}
             >
-              {creating
-                ? "Uploading..."
-                : starting
-                  ? "Starting..."
-                  : "Create Job & Start Processing"}
+              {uploading
+                ? `Uploading ${uploadedCount}/${resumeFiles.length}...`
+                : creating
+                  ? "Creating Job..."
+                  : starting
+                    ? "Starting..."
+                    : "Create Job & Start Processing"}
             </button>
           </div>
 
@@ -482,27 +641,27 @@ export default function MainAiAnalyze() {
               <span>{activeJob?.message || "Waiting for job"}</span>
             </div>
 
-            
-              <div className="token-grid timing-grid">
-                <div>
-                  <span>Total Time</span>
-                  <strong>{getJobTimeText(activeJob)}</strong>
-                </div>
-                <div>
-                  <span>Avg / Resume</span>
-                  <strong>{getAverageResumeTime(activeJob)}</strong>
-                </div>
-                <div>
-                  <span>Started</span>
-                  <strong>{formatISTTime(activeJob?.started_at)}</strong>
-                </div>
-                <div>
-                  <span>Completed</span>
-                  <strong>{formatISTTime(activeJob?.completed_at)}</strong>
-                </div>
-              </div>
 
-<div className="token-grid">
+            <div className="token-grid timing-grid">
+              <div>
+                <span>Total Time</span>
+                <strong>{getJobTimeText(activeJob)}</strong>
+              </div>
+              <div>
+                <span>Avg / Resume</span>
+                <strong>{getAverageResumeTime(activeJob)}</strong>
+              </div>
+              <div>
+                <span>Started</span>
+                <strong>{formatISTTime(activeJob?.started_at)}</strong>
+              </div>
+              <div>
+                <span>Completed</span>
+                <strong>{formatISTTime(activeJob?.completed_at)}</strong>
+              </div>
+            </div>
+
+            <div className="token-grid">
               <div>
                 <strong>{formatNumber(activeJob?.input_tokens || 0)}</strong>
                 <span>Input Tokens</span>
@@ -517,23 +676,23 @@ export default function MainAiAnalyze() {
               </div>
             </div>
 
-            
-              <div className="token-grid cost-grid">
-                <div>
-                  <span>Estimated Cost</span>
-                  <strong>₹{activeJob?.estimated_cost_inr ?? 0}</strong>
-                </div>
-                <div>
-                  <span>Cost / Resume</span>
-                  <strong>₹{activeJob?.cost_per_resume_inr ?? 0}</strong>
-                </div>
-                <div>
-                  <span>Cost USD</span>
-                  <strong>${activeJob?.estimated_cost_usd ?? 0}</strong>
-                </div>
-              </div>
 
-<div className="status-actions">
+            <div className="token-grid cost-grid">
+              <div>
+                <span>Estimated Cost</span>
+                <strong>₹{activeJob?.estimated_cost_inr ?? 0}</strong>
+              </div>
+              <div>
+                <span>Cost / Resume</span>
+                <strong>₹{activeJob?.cost_per_resume_inr ?? 0}</strong>
+              </div>
+              <div>
+                <span>Cost USD</span>
+                <strong>${activeJob?.estimated_cost_usd ?? 0}</strong>
+              </div>
+            </div>
+
+            <div className="status-actions">
               <button disabled={!activeJobId} onClick={() => refreshJob(activeJobId)}>
                 Refresh
               </button>

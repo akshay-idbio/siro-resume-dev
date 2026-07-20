@@ -3860,6 +3860,48 @@ async def start_db_backed_main_job(
 
     if job.get("status") == "completed":
         raise HTTPException(status_code=409, detail="Job is already completed")
+    
+
+    expected_resumes = int(
+        job.get("expected_resumes") or 0
+    )
+
+    uploaded_resumes = int(
+        job.get("uploaded_resumes") or 0
+    )
+
+    upload_status = str(
+        job.get("upload_status") or ""
+    ).strip().lower()
+
+    if expected_resumes <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Expected resume count is missing or invalid",
+        )
+
+    if uploaded_resumes != expected_resumes:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Resume upload is not complete.",
+                "expected_resumes": expected_resumes,
+                "uploaded_resumes": uploaded_resumes,
+                "remaining_resumes": max(
+                    expected_resumes - uploaded_resumes,
+                    0,
+                ),
+            },
+        )
+
+    if upload_status != "completed":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Resume upload status is not completed.",
+                "upload_status": upload_status,
+            },
+        )
 
     await update_job_progress(
         job_id=job_id,
