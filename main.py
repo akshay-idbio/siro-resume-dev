@@ -141,6 +141,7 @@ OUTPUT_COLUMNS = [
     "Candidate Skills",
     "Experience Mismatch",
     "Skill Mismatch",
+    "Location Mismatch",
     "ATS",
     "Remark",
 ]
@@ -275,6 +276,9 @@ def debug(msg: str):
     print(f"[DEBUG] {msg}", flush=True)
 
 
+
+
+
 # =========================================================
 # BASIC CLEANING HELPERS
 # =========================================================
@@ -338,6 +342,23 @@ def safe_number(value, default=0):
         return float(value)
     except Exception:
         return default
+    
+
+
+def safe_optional_number(value):
+    """
+    Returns a float when available.
+    Returns None instead of zero when value is missing or invalid.
+    """
+
+    try:
+        if value is None or value == "":
+            return None
+
+        return float(value)
+
+    except Exception:
+        return None
     
     
     
@@ -952,8 +973,13 @@ Skill rules:
 # PYTHON SHORTLISTING OF REQUIREMENTS
 # =========================================================
 
-
 def build_requirement_search_text(row: dict) -> str:
+    """
+    Shortlisting only needs searchable requirement text.
+    Claude will interpret the final experience requirement
+    during the existing second AI call.
+    """
+
     return " ".join(
         [
             clean_cell(row.get("Job Title")),
@@ -964,7 +990,6 @@ def build_requirement_search_text(row: dict) -> str:
             clean_cell(row.get("Work Location CDF")),
         ]
     )
-
 
 def build_candidate_search_text(candidate_info: dict) -> str:
     return " ".join(
@@ -980,7 +1005,7 @@ def build_candidate_search_text(candidate_info: dict) -> str:
 def shortlist_requirements(
     requirements_df: pd.DataFrame,
     candidate_info: dict,
-    top_n: int = 25,
+    top_n: int = 10,
 ) -> list:
     candidate_text = build_candidate_search_text(candidate_info)
     candidate_norm = normalize_text(candidate_text)
@@ -1038,20 +1063,31 @@ def requirement_for_prompt(row: dict) -> dict:
         "MSP Owner": clean_cell(row.get("MSP Owner")),
         "Job Title": clean_cell(row.get("Job Title")),
         "Skills - Name": clean_cell(row.get("Skills - Name")),
-        "Skills - Experience": clean_cell(row.get("Skills - Experience")),
-        "Additional Skills": clean_cell(row.get("Additional Skills")),
-        "Job Description": clean_cell(row.get("Job Description")),
+        "Skills - Experience": clean_cell(
+            row.get("Skills - Experience")
+        ),
+        "Additional Skills": clean_cell(
+            row.get("Additional Skills")
+        ),
+        "Job Description": clean_cell(
+            row.get("Job Description")
+        ),
         "Status": clean_cell(row.get("Status")),
-        "Work Location City": clean_cell(row.get("Work Location City")),
-        "Work Location CDF": clean_cell(row.get("Work Location CDF")),
+        "Work Location City": clean_cell(
+            row.get("Work Location City")
+        ),
+        "Work Location CDF": clean_cell(
+            row.get("Work Location CDF")
+        ),
         "Rate Card": clean_cell(row.get("Rate Card")),
         "Yearly Rate": clean_cell(row.get("Yearly Rate")),
         "System Enhancements Required": clean_cell(
             row.get("System Enhancements Required")
         ),
-        "Candidate Annual CTC": clean_cell(row.get("Candidate Annual CTC")),
+        "Candidate Annual CTC": clean_cell(
+            row.get("Candidate Annual CTC")
+        ),
     }
-
 
 # def call_claude_best_requirement_match(
 #     candidate_info: dict,
@@ -1384,7 +1420,24 @@ Allowed final_remark values:
 - Not Suitable
 - Skill mismatch
 
-Set experience_mismatch as "Yes" if candidate total experience is less than required experience, otherwise "No".
+Experience evaluation rules:
+- For every requirement, use "Effective Required Experience" as the final experience requirement.
+- "Effective Required Experience" is already determined using this priority:
+  1. Experience explicitly mentioned in Job Description.
+  2. Skills - Experience only when Job Description does not clearly mention required experience.
+- Do not override this priority.
+- Do not use Skills - Experience when Experience Source is "Job Description".
+- Compare candidate_total_experience_years against Effective Required Experience.
+- If Effective Required Experience contains a range such as 5-8 years:
+  - Candidate below 5 years has an experience mismatch.
+  - Candidate between 5 and 8 years is aligned.
+  - Candidate above 8 years may still be considered.
+  - Do not reject a candidate only because their experience is above the stated range.
+  - Consider role seniority, skills, CTC, responsibilities, and overall suitability before reducing ATS.
+- If it says 5+ years or minimum 5 years, candidate must have at least 5 years.
+- Set experience_mismatch = "Yes" when candidate experience is below the effective minimum requirement.
+- Otherwise set experience_mismatch = "No".
+- If candidate experience or effective required experience is unavailable, do not invent it; set experience_mismatch = "No" and explain that experience could not be fully evaluated.
 Set skill_mismatch as "Yes" if candidate is missing important required skills, otherwise "No".
 Set location_mismatch as "Yes" only if candidate location is explicitly available and conflicts with requirement location.
 If candidate location is missing, set location_mismatch as "Not Evaluated".
@@ -1545,6 +1598,8 @@ Important:
 - Use Match only when candidate is a strong/clear fit.
 - Use Not Suitable when profile/domain is not aligned.
 - call_status must always be empty string "" because call status is recruiter-entered manually after calling the candidate.
+- Experience quantity must never override role, domain, or core-skill mismatch.
+- A candidate with sufficient total years but an unrelated professional background must not be marked as Match, Good Fit, or Strong Fit.
 
 Relevance rules:
 - Return all requirements that are relevant enough for recruiter review.
@@ -1572,6 +1627,15 @@ Location rules:
 - Do not infer candidate location from employer/work/education/project location.
 - In reason, if candidate location is missing, write:
   "Candidate location is not explicitly mentioned in the resume, so location fit is not evaluated."
+- When candidate location confidence is "high" or "medium" and the requirement provides one or more explicit work cities:
+  - Compare the candidate city against every listed valid work city.
+  - If the candidate city matches none of them, set location_mismatch = "Yes".
+  - Do not state that location could not be evaluated.
+- Multiple listed work locations do not make location unavailable.
+- Treat nearby cities as equivalent only when they clearly belong to the same metropolitan or hiring region.
+- Do not assume remote work, relocation willingness, hybrid flexibility, or location flexibility unless explicitly mentioned.
+- If the candidate location and work location differ, but the candidate remains technically relevant, location_mismatch may be "Yes" while final_remark reflects the principal concern.
+- The reason must clearly mention location as a separate concern whenever location_mismatch = "Yes".
 
 Allowed verdict values:
 - Strong Fit
@@ -1588,10 +1652,102 @@ Allowed final_remark values:
 - Not Suitable
 - Skill mismatch
 
-Set experience_mismatch as "Yes" if candidate total experience is less than required experience, otherwise "No".
+Experience interpretation and comparison rules:
+- For each requirement, first read the complete Job Description carefully.
+- Determine whether the Job Description explicitly or clearly states required candidate experience.
+- Experience may appear in any natural-language format, including:
+  "8-10",
+  "8 to 10 years",
+  "minimum 8 years",
+  "8+ years",
+  "at least 8 years",
+  "experience required: 8-10",
+  "relevant experience of 5 years",
+  or other equivalent wording.
+- Do not require the words "year" or "years" when the surrounding text clearly labels the number as experience.
+- If Job Description clearly contains required experience, use the Job Description experience.
+- Only when Job Description does not clearly contain required experience, use "Skills - Experience".
+- Never use Skills - Experience when the Job Description already provides a clear experience requirement.
+- Do not confuse experience with project duration, contract duration, notice period, education duration, company age, product version, or technology version.
+- Before evaluating the candidate, internally determine:
+  1. effective_experience_text
+  2. effective_minimum_experience_years
+  3. effective_maximum_experience_years
+  4. experience_source
+- experience_source must be one of:
+  "Job Description"
+  "Skills - Experience"
+  "Not Available"
+- Compare candidate_total_experience_years against the effective experience determined above.
+- If the candidate is below the effective minimum, set experience_mismatch = "Yes".
+- If the candidate meets the minimum, set experience_mismatch = "No".
+- A candidate above the maximum range may still be considered and must not be rejected only for being over-experienced.
+- When the candidate is above the stated maximum experience:
+  - Do not set experience_mismatch = "Yes" only because of over-experience.
+  - Set experience_mismatch = "No".
+  - The candidate may still be evaluated based on role seniority, CTC, responsibilities, skills, and overall suitability.
+- If experience cannot be determined, do not invent it. Set experience_mismatch = "No" and explain that experience could not be fully evaluated.
+- In reason, explicitly mention:
+  1. Candidate total experience.
+  2. Effective required experience used.
+  3. Whether it came from Job Description or Skills - Experience.
+- Example:
+  "Candidate has 7 years of experience. Job Description requires 8-10 years, so the candidate is below the minimum required experience."
+- When fallback is used, explicitly state:
+  "Job Description did not clearly specify experience, so Skills - Experience was used."
+Role, domain, and experience relevance rules:
+- Total years of experience alone do not make a candidate suitable for a requirement.
+- Experience must be relevant to the required role, domain, responsibilities, and core skills.
+- Do not treat unrelated professional experience as matching experience.
+- For example, 12 years of medical experience must not satisfy a requirement asking for 10 years of software engineering experience.
+- Similarly, experience in an unrelated technology, function, or business domain must not receive full experience credit merely because the total number of years is sufficient.
+- First evaluate role and domain alignment, then evaluate whether the candidate's experience is relevant to that role.
+- When the candidate has enough total experience but lacks relevant role/domain experience:
+  - Do not mark the candidate as a Match based only on total experience.
+  - Reduce ATS significantly under role/domain and skill alignment.
+  - Set skill_mismatch = "Yes" when important required capabilities are missing.
+  - Use final_remark = "Not Suitable" when the overall profession or domain is unrelated.
+  - Use final_remark = "Skill mismatch" when the domain is related but critical technical skills are missing.
+- Experience Mismatch should primarily indicate insufficient required years.
+- An unrelated profession or domain should normally be handled through role/domain alignment, skill mismatch, ATS, verdict, and final remark—not by pretending the experience requirement is satisfied.
+- A candidate must not receive Good Fit or Strong Fit unless there is meaningful evidence of relevant role, domain, responsibility, and core-skill experience.
+Mandatory and core skill rules:
+- Distinguish mandatory/core requirements from desirable, preferred, optional, and good-to-have requirements.
+- Determine core requirements from the full Job Description, including required qualifications, essential duties, must-have capabilities, primary responsibilities, repeated requirements, and expected deliverables.
+- Do not claim that the candidate possesses a skill, qualification, certification, domain capability, tool, method, or experience unless it is explicitly present or strongly supported by the candidate profile.
+- Treat related, adjacent, transferable, or substitute capabilities as relevant evidence, but do not treat them as identical to an explicitly required core capability.
+- Evaluate equivalence based on whether the candidate can perform the actual responsibilities and expected outcomes of the role.
+- When one or more core requirements are missing:
+  - Set skill_mismatch = "Yes".
+  - Do not use final_remark = "Match".
+  - Do not return Strong Fit.
+  - Use final_remark = "Skill mismatch" when the candidate remains relevant but has a critical gap.
+  - Use final_remark = "Not Suitable" when the missing requirements prevent the candidate from performing the primary role.
+- A candidate may still receive Good Fit when the missing item is clearly optional, preferred, trainable, substitutable, or supported by accepted equivalent experience.
+- Do not assume that a missing capability can be learned, substituted, or ignored unless the Job Description indicates such flexibility.
+- Never state that the candidate has all required capabilities unless every core requirement is supported by the candidate profile.
 Set skill_mismatch as "Yes" if candidate is missing important required skills, otherwise "No".
 Set location_mismatch as "Yes" only if candidate location is explicitly available and conflicts with requirement location.
 If candidate location is missing, set location_mismatch as "Not Evaluated".
+Structured consistency rules:
+- matched_core_requirements must contain only the core requirements clearly supported by the candidate profile.
+- missing_core_requirements must contain only genuinely essential requirements that are necessary to perform the primary responsibilities of the role.
+- Do not place every skill mentioned in the Job Description into missing_core_requirements.
+- Do not place optional, preferred, desirable, good-to-have, supporting, secondary, or easily substitutable capabilities into missing_core_requirements.
+- A requirement should be treated as core only when one or more of the following is true:
+  1. It is explicitly described as mandatory, must-have, required, essential, or critical.
+  2. It is repeatedly emphasized in the Job Description.
+  3. The primary responsibilities cannot reasonably be performed without it.
+  4. It defines the main role, function, domain, qualification, platform, method, certification, or expected output.
+- Related or transferable experience may partially satisfy a requirement when it demonstrates the candidate can perform the same primary responsibilities and expected outcomes.
+- Do not treat a different tool, platform, method, qualification, or domain as fully equivalent when the Job Description clearly requires the exact capability for primary responsibilities.
+- A candidate may still be a Match or Good Fit when a missing item is secondary, optional, preferred, trainable, substitutable, or not essential to performing the role.
+- missing_core_requirements must remain empty when all essential requirements are reasonably supported, even if minor or secondary gaps exist.
+- If missing_core_requirements is not empty, skill_mismatch must be "Yes".
+- If missing_core_requirements is not empty, final_remark must not be "Match".
+- If missing_core_requirements is empty, do not set skill_mismatch = "Yes" only because of minor, optional, secondary, or preferred gaps.
+- location_match_evidence must briefly state the candidate location and the requirement location used for comparison.
+- If candidate location is available and does not match any valid requirement location, location_mismatch must be "Yes".
 
 Candidate Profile:
 {json.dumps(candidate_info, ensure_ascii=False, indent=2)}
@@ -1604,6 +1760,15 @@ Return only valid JSON:
   "matches": [
     {{
       "request_id": null,
+      "effective_experience_text": null,
+      "effective_minimum_experience_years": null,
+      "effective_maximum_experience_years": null,
+      "experience_source": "Not Available",
+
+      "matched_core_requirements": [],
+      "missing_core_requirements": [],
+      "location_match_evidence": "",
+
       "ats_score": 0,
       "verdict": "Not Suitable",
       "call_status": "",
@@ -1657,6 +1822,92 @@ Return only valid JSON:
         if not isinstance(match, dict):
             continue
 
+
+
+        # Validate experience interpretation returned by Claude
+        experience_source = clean_cell(
+            match.get("experience_source")
+        )
+
+        allowed_experience_sources = {
+            "Job Description",
+            "Skills - Experience",
+            "Not Available",
+        }
+
+        if experience_source not in allowed_experience_sources:
+            experience_source = "Not Available"
+
+        match["experience_source"] = experience_source
+
+        match["effective_experience_text"] = clean_cell(
+            match.get("effective_experience_text")
+        )
+
+        match["effective_minimum_experience_years"] = (
+            safe_optional_number(
+                match.get("effective_minimum_experience_years")
+            )
+        )
+
+        match["effective_maximum_experience_years"] = (
+            safe_optional_number(
+                match.get("effective_maximum_experience_years")
+            )
+        )
+
+        minimum_experience = match.get(
+            "effective_minimum_experience_years"
+        )
+        maximum_experience = match.get(
+            "effective_maximum_experience_years"
+        )
+
+        # Correct accidental reversed ranges, for example 10-8
+        if (
+            minimum_experience is not None
+            and maximum_experience is not None
+            and minimum_experience > maximum_experience
+        ):
+            (
+                match["effective_minimum_experience_years"],
+                match["effective_maximum_experience_years"],
+            ) = (
+                maximum_experience,
+                minimum_experience,
+            )
+
+
+        candidate_experience = safe_optional_number(
+            candidate_info.get(
+                "candidate_total_experience_years"
+            )
+        )
+
+        # Refresh values in case the range was reversed above.
+        minimum_experience = match.get(
+            "effective_minimum_experience_years"
+        )
+        maximum_experience = match.get(
+            "effective_maximum_experience_years"
+        )
+
+        # Below minimum is definitely an experience mismatch.
+        if (
+            candidate_experience is not None
+            and minimum_experience is not None
+            and candidate_experience < minimum_experience
+        ):
+            match["experience_mismatch"] = "Yes"
+
+        # Meeting or exceeding the minimum is not an experience mismatch.
+        elif (
+            candidate_experience is not None
+            and minimum_experience is not None
+            and candidate_experience >= minimum_experience
+        ):
+            match["experience_mismatch"] = "No"
+
         # Always keep call status blank. Recruiter will fill this manually.
         match["call_status"] = ""
 
@@ -1671,18 +1922,72 @@ Return only valid JSON:
             final_remark = "Not Suitable"
         match["final_remark"] = final_remark
 
-        ats = safe_number(match.get("ats_score"))
+        matched_core_requirements = match.get(
+            "matched_core_requirements"
+        ) or []
 
-        # Keep verdict aligned with ATS, but do not force ATS itself.
-        if ats >= 85:
+        missing_core_requirements = match.get(
+            "missing_core_requirements"
+        ) or []
+
+        if not isinstance(matched_core_requirements, list):
+            matched_core_requirements = []
+
+        if not isinstance(missing_core_requirements, list):
+            missing_core_requirements = []
+
+        match["matched_core_requirements"] = [
+            clean_cell(item)
+            for item in matched_core_requirements
+            if clean_cell(item)
+        ]
+
+        match["missing_core_requirements"] = [
+            clean_cell(item)
+            for item in missing_core_requirements
+            if clean_cell(item)
+        ]
+
+        # Missing core requirements must always create a skill mismatch.
+        if match["missing_core_requirements"]:
+            match["skill_mismatch"] = "Yes"
+
+            if match["final_remark"] == "Match":
+                match["final_remark"] = "Skill mismatch"
+
+
+        else:
+            # No missing core requirement means minor gaps alone
+            # must not create a forced skill mismatch.
+            if match.get("skill_mismatch") == "Yes":
+                match["skill_mismatch"] = "No"
+
+            if match.get("final_remark") == "Skill mismatch":
+                match["final_remark"] = "Match"
+
+        ats = safe_number(match.get("ats_score"))
+        final_remark = clean_cell(
+            match.get("final_remark")
+        )
+
+        # Not Suitable must stay consistent across remark, ATS and verdict.
+        if final_remark == "Not Suitable":
+            ats = min(ats, 49)
+            verdict = "Not Suitable"
+
+        elif ats >= 85:
             verdict = "Strong Fit"
+
         elif ats >= 70:
             verdict = "Good Fit"
+
         elif ats >= 50:
             verdict = "Possible Fit"
+
         else:
             verdict = "Not Suitable"
 
+        match["ats_score"] = ats
         match["verdict"] = verdict
 
         # Safety: if candidate location is missing, never allow Location Mismatch.
@@ -1771,11 +2076,25 @@ def build_output_row(
             candidate_info.get("candidate_total_experience_years")
         ),
         "Candidate Skills": ", ".join(candidate_skills),
-        "Experience Mismatch": clean_cell(match_result.get("experience_mismatch"))
-        or "No",
-        "Skill Mismatch": clean_cell(match_result.get("skill_mismatch")) or "No",
-        "ATS": clean_cell(match_result.get("ats_score")),
-        "Remark": clean_cell(match_result.get("reason")),
+        "Experience Mismatch": clean_cell(
+            match_result.get("experience_mismatch")
+        ) or "No",
+
+        "Skill Mismatch": clean_cell(
+            match_result.get("skill_mismatch")
+        ) or "No",
+
+        "Location Mismatch": clean_cell(
+            match_result.get("location_mismatch")
+        ) or "Not Evaluated",
+
+        "ATS": clean_cell(
+            match_result.get("ats_score")
+        ),
+
+        "Remark": clean_cell(
+            match_result.get("reason")
+        ),
     }
 
 
@@ -2880,7 +3199,7 @@ async def process_single_resume_file(
         shortlisted_requirements = shortlist_requirements(
             requirements_df=requirements_df,
             candidate_info=candidate_info,
-            top_n=25,
+            top_n=10,
         )
 
         # ------------------------------------------------------------
