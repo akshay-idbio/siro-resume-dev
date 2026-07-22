@@ -218,10 +218,10 @@ async def create_upload_job(
             detail="At least one resume is required",
         )
 
-    if expected_resumes > 1000:
+    if expected_resumes > 2000:
         raise HTTPException(
             status_code=400,
-            detail="Maximum 1000 resumes are allowed in one job",
+            detail="Maximum 2000 resumes are allowed in one job",
         )
 
     validate_requirement_file(requirement_file)

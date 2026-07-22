@@ -556,3 +556,9 @@ button:disabled {
     gap: 5px;
   }
 }
+
+.main-ai-alert.warning {
+  color: #92400e;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+}

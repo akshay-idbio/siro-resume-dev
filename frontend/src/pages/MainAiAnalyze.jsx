@@ -98,8 +98,18 @@ const getAverageResumeTime = (job) => {
 
 const POLL_MS = 5000;
 const UPLOAD_BATCH_SIZE = 25;
-const MAX_RESUMES_PER_JOB = 1000;
+const MAX_RESUMES_PER_JOB = 2000;
 const MAX_UPLOAD_RETRIES = 3;
+
+const ALLOWED_RESUME_EXTENSIONS = [".pdf", ".doc", ".docx"];
+
+const EMPTY_SELECTION_SUMMARY = {
+  source: "",
+  selectedTotal: 0,
+  validCount: 0,
+  unsupportedCounts: {},
+  nestedFileCount: 0,
+};
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-IN");
@@ -121,6 +131,7 @@ export default function MainAiAnalyze() {
   const resumesRef = useRef(null);
   const folderRef = useRef(null);
   const pollRef = useRef(null);
+  const warningTimerRef = useRef(null);
 
   const [user] = useState(getCurrentUser());
 
@@ -147,12 +158,23 @@ export default function MainAiAnalyze() {
   const [notice, setNotice] = useState("");
 
   const progressPercent = getProgress(activeJob);
+  const [selectionSummary, setSelectionSummary] = useState(
+    EMPTY_SELECTION_SUMMARY
+  );
+
+  const [temporaryWarning, setTemporaryWarning] = useState("");
 
   useEffect(() => {
     loadJobs();
 
+
+
     return () => {
       stopPolling();
+
+      if (warningTimerRef.current) {
+        clearTimeout(warningTimerRef.current);
+      }
     };
   }, []);
 
@@ -226,14 +248,123 @@ export default function MainAiAnalyze() {
     setError("");
   };
 
-  const handleResumeSelect = (event) => {
-    const files = Array.from(event.target.files || []);
+  const handleResumeSelect = (event, source = "files") => {
+    const selectedFiles = Array.from(
+      event.target.files || []
+    );
 
-    if (!files.length) return;
+    if (!selectedFiles.length) {
+      setResumeFiles([]);
+      setSelectionSummary({
+        ...EMPTY_SELECTION_SUMMARY,
+        source,
+      });
 
-    setResumeFiles(files);
-    setNotice(`${files.length} resume file(s) selected`);
+      event.target.value = "";
+      return;
+    }
+
+    const validFiles = [];
+    const unsupportedCounts = {};
+    let nestedFileCount = 0;
+
+    selectedFiles.forEach((file) => {
+
+
+      const extension = getFileExtension(file.name);
+
+      if (
+        ALLOWED_RESUME_EXTENSIONS.includes(extension)
+      ) {
+        validFiles.push(file);
+        return;
+      }
+
+      unsupportedCounts[extension] =
+        (unsupportedCounts[extension] || 0) + 1;
+    });
+
+    setResumeFiles(validFiles);
+
+    setSelectionSummary({
+      source,
+      selectedTotal: selectedFiles.length,
+      validCount: validFiles.length,
+      unsupportedCounts,
+      nestedFileCount: 0,
+    });
+
+    setTemporaryWarning("");
     setError("");
+
+    if (validFiles.length > 0) {
+      setNotice(
+        `${validFiles.length} supported resume file(s) ready`
+      );
+    } else {
+      setNotice("");
+    }
+
+    // Allows selecting the same folder/files again.
+    event.target.value = "";
+  };
+
+  const getFileExtension = (filename) => {
+    const name = String(filename || "").trim().toLowerCase();
+    const lastDotIndex = name.lastIndexOf(".");
+
+    if (lastDotIndex <= 0 || lastDotIndex === name.length - 1) {
+      return "no extension";
+    }
+
+    return name.slice(lastDotIndex);
+  };
+
+  const formatUnsupportedCounts = (counts = {}) => {
+    return Object.entries(counts)
+      .map(([extension, count]) => {
+        const label =
+          extension === "no extension"
+            ? "file(s) without extension"
+            : extension.replace(".", "").toUpperCase();
+
+        return `${count} ${label}`;
+      })
+      .join(", ");
+  };
+
+  const buildSelectionWarning = () => {
+    const messages = [];
+
+    const unsupportedText = formatUnsupportedCounts(
+      selectionSummary.unsupportedCounts
+    );
+
+    if (unsupportedText) {
+      messages.push(
+        `${unsupportedText} file(s) skipped. ` +
+        `Currently only PDF, DOC and DOCX resumes are supported.`
+      );
+    }
+
+    
+
+    return messages.join(" ");
+  };
+
+  const showTemporaryWarning = (message) => {
+    if (!message) return;
+
+    if (warningTimerRef.current) {
+      clearTimeout(warningTimerRef.current);
+    }
+
+    setTemporaryWarning(message);
+
+    warningTimerRef.current = setTimeout(() => {
+      setTemporaryWarning("");
+      warningTimerRef.current = null;
+    }, 7000);
   };
 
   const uploadBatchWithRetry = async ({
@@ -292,13 +423,34 @@ export default function MainAiAnalyze() {
   };
 
   const handleCreateAndStart = async () => {
+
+
+    const selectionWarning =
+      buildSelectionWarning();
+
+    if (selectionWarning) {
+      showTemporaryWarning(selectionWarning);
+    }
+
     if (!requirementFile) {
       setError("Please select requirement Excel first.");
       return;
     }
 
     if (!resumeFiles.length) {
-      setError("Please select resume files or folder.");
+      if (selectionSummary.selectedTotal > 0) {
+        showTemporaryWarning(
+          selectionWarning ||
+          "No supported resume files were found. " +
+          "Please select PDF, DOC or DOCX resumes."
+        );
+      } else {
+        showTemporaryWarning(
+          "Please select resume files or a resume folder."
+        );
+      }
+
+      setError("");
       return;
     }
 
@@ -496,8 +648,23 @@ export default function MainAiAnalyze() {
           </div>
         </section>
 
-        {error && <div className="main-ai-alert error">{error}</div>}
-        {notice && <div className="main-ai-alert success">{notice}</div>}
+        {error && (
+          <div className="main-ai-alert error">
+            {error}
+          </div>
+        )}
+
+        {temporaryWarning && (
+          <div className="main-ai-alert warning">
+            {temporaryWarning}
+          </div>
+        )}
+
+        {notice && (
+          <div className="main-ai-alert success">
+            {notice}
+          </div>
+        )}
 
         <section className="main-ai-grid">
           <div className="main-ai-card upload-card">
@@ -543,7 +710,9 @@ export default function MainAiAnalyze() {
               accept=".pdf,.doc,.docx"
               multiple
               hidden
-              onChange={handleResumeSelect}
+              onChange={(event) =>
+                handleResumeSelect(event, "files")
+              }
             />
 
             <input
@@ -553,7 +722,9 @@ export default function MainAiAnalyze() {
               hidden
               webkitdirectory=""
               directory=""
-              onChange={handleResumeSelect}
+              onChange={(event) =>
+                handleResumeSelect(event, "folder")
+              }
             />
 
             <div className="upload-actions">
