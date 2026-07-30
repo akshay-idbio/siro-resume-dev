@@ -1,9 +1,0 @@
-
-{"success":true,"message":"Login successful","access_token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YTRkMTVjMWFmZDc2MjViMjNhNWNiN2QiLCJlbWFpbCI6ImFkbWluQHNpcm8uYWkiLCJyb2xlIjoiYWRtaW4iLCJzdGF0dXMiOiJhcHByb3ZlZCIsImV4cCI6MTc4MzUyMzM5OH0.G4t5J1517-h_-DjmRZGcr2wxTnWCGho-Nt88mrVleeA","token_type":"bearer","user":{"_id":"6a4d15c1afd7625b23a5cb7d","name":"SIRO Admin","email":"admin@siro.ai","company":"SIRO","phone":"","role":"admin","status":"approved","created_at":"2026-07-07T15:05:37.360000","updated_at":"2026-07-07T15:05:37.360000","approved_at":"2026-07-07T15:05:37.360000","approved_by":"system","rejected_at":null,"rejected_by":null,"reject_reason":"","last_login_at":null}}(makedata) root@e2e-96-15:~/Desktop/Siro_Resume_DEV# 
-
-
-curl http://127.0.0.1:9000/auth/me \
--H "Authorization: Bearer $"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YTRkMTVjMWFmZDc2MjViMjNhNWNiN2QiLCJlbWFpbCI6ImFkbWluQHNpcm8uYWkiLCJyb2xlIjoiYWRtaW4iLCJzdGF0dXMiOiJhcHByb3ZlZCIsImV4cCI6MTc4MzUyMzM5OH0.G4t5J1517-h_-DjmRZGcr2wxTnWCGho-Nt88mrVleeA""
-
-
-TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YTRkMTVjMWFmZDc2MjViMjNhNWNiN2QiLCJlbWFpbCI6ImFkbWluQHNpcm8uYWkiLCJyb2xlIjoiYWRtaW4iLCJzdGF0dXMiOiJhcHByb3ZlZCIsImV4cCI6MTc4MzUyNDUzNH0.Jdm9_AERMEHm80IA8WNjQzMfez75Qc3LHSUZoyXRUMw'

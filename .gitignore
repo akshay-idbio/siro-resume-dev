@@ -21,3 +21,4 @@ frontend/b.py
 *.doc
 *.PDF
 *.zip
+supporting_files/*
