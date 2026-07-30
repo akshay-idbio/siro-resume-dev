@@ -8,7 +8,7 @@ const config = {
 
   MAX_PDF_SIZE_MB: 20,
 
-  COMPANY_NAME: "SIRO AI",
+  COMPANY_NAME: "SIROai",
   COMPANY_SUBTITLE: "AI Powered Resume Screening & Requirement Matching",
 };
 
@@ -25,7 +25,7 @@ export default config;
 
 //   MAX_PDF_SIZE_MB: 20,
 
-//   COMPANY_NAME: "SIRO AI",
+//   COMPANY_NAME: "SIROai",
 //   COMPANY_SUBTITLE: "AI Powered Resume Screening & Requirement Matching",
 // };
 

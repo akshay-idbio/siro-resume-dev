@@ -173,7 +173,7 @@ export default function AdminDashboard() {
     <div className="admin-page">
       <header className="admin-header">
         <div>
-          <div className="admin-eyebrow">SIRO AI ADMIN</div>
+          <div className="admin-eyebrow">SIROai admin</div>
           <h1>Admin Dashboard</h1>
           <p>Manage users, monitor jobs, review resume processing, and download outputs.</p>
         </div>
@@ -191,12 +191,17 @@ export default function AdminDashboard() {
       {error && <div className="admin-alert error">{error}</div>}
 
       <section className="admin-stats">
-        <div><span>Total Users</span><strong>{stats.users}</strong></div>
-        <div><span>Pending Users</span><strong>{stats.pending}</strong></div>
-        <div><span>Total Jobs</span><strong>{stats.totalJobs}</strong></div>
-        <div><span>Running Jobs</span><strong>{stats.runningJobs}</strong></div>
+        <div> <span>Total users</span><strong>{stats.users}</strong></div>
+        <div><span>Pending users</span><strong>{stats.pending}</strong></div>
+        <div><span>Total jobs</span><strong>{stats.totalJobs}</strong></div>
+        <div><span>Running jobs</span><strong>{stats.runningJobs}</strong></div>
         <div><span>Completed</span><strong>{stats.completedJobs}</strong></div>
         <div><span>Failed</span><strong>{stats.failedJobs}</strong></div>
+
+       
+
+
+
       </section>
 
       <section className="admin-grid">

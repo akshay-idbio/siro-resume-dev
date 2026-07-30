@@ -4,6 +4,19 @@ import config from "../config";
 import { loginUser, registerUser } from "../api/api";
 import "./Login.css";
 
+function PasswordRequirement({ valid, label }) {
+  return (
+    <div
+      className={`password-requirement ${
+        valid ? "password-requirement-valid" : ""
+      }`}
+    >
+      <span className="password-check-icon">{valid ? "✓" : ""}</span>
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export default function Login() {
   const navigate = useNavigate();
 
@@ -16,12 +29,33 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  const [showPassword, setShowPassword] = useState(false);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const passwordChecks = {
+    minLength: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[^A-Za-z0-9]/.test(password),
+  };
+
+  const isPasswordValid = Object.values(passwordChecks).every(Boolean);
+
+  const switchMode = (newMode) => {
+    setMode(newMode);
+    setError("");
+    setSuccess("");
+    setPassword("");
+    setShowPassword(false);
+  };
+
   const handleLogin = async (event) => {
     event.preventDefault();
+
     setError("");
     setSuccess("");
 
@@ -35,7 +69,7 @@ export default function Login() {
 
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err.message || "Login failed");
+      setError(err.message || "Incorrect email or password.");
     } finally {
       setSubmitting(false);
     }
@@ -43,8 +77,14 @@ export default function Login() {
 
   const handleRegister = async (event) => {
     event.preventDefault();
+
     setError("");
     setSuccess("");
+
+    if (!isPasswordValid) {
+      setError("Please complete all password requirements.");
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -57,10 +97,18 @@ export default function Login() {
         phone: phone.trim(),
       });
 
-      setSuccess("Registration submitted. Please wait for admin approval.");
+      setName("");
+      setCompany("");
+      setPhone("");
+      setPassword("");
+
       setMode("login");
+
+      setSuccess(
+        "Registration submitted successfully. Please wait for admin approval."
+      );
     } catch (err) {
-      setError(err.message || "Registration failed");
+      setError(err.message || "Registration failed.");
     } finally {
       setSubmitting(false);
     }
@@ -68,139 +116,231 @@ export default function Login() {
 
   return (
     <div className="login-page">
-      <div className="shape shape-one" />
-      <div className="shape shape-two" />
-      <div className="shape shape-three" />
+      <div className="login-background-grid" />
 
-      <main className="login-shell">
-        <section className="login-visual">
-          <div className="visual-overlay" />
-
-          <div className="visual-content">
-            <span className="eyebrow">AI RESUME INTELLIGENCE</span>
-
-            <h1>
-              Screen faster.
-              <br />
-              Shortlist smarter.
-            </h1>
-
-            <p>
-              Compare resumes with job requirements using AI-powered screening,
-              ATS scoring, cost tracking, and recruiter-ready Excel output.
-            </p>
-
-            <div className="visual-actions">
-              <span>Talent Intelligence</span>
-              <span>Precision Matching</span>
-              <span>Decision Reports</span>
+      <main
+        className={`login-card ${
+          mode === "register" ? "login-card-register" : ""
+        }`}
+      >
+        <div className="login-brand">
+          <div className="login-logo-row">
+            <div className="login-logo-icon">
+              <span />
             </div>
-          </div>
-        </section>
 
-        <section className="login-panel">
-          <div className="login-brand">
-            <div className="brand-mark">AI</div>
-
-            <h2>{config.COMPANY_NAME}</h2>
-            <p>{config.COMPANY_SUBTITLE}</p>
+            <h1>{config.COMPANY_NAME || "SIROai"}</h1>
           </div>
 
-          <div style={{ display: "flex", gap: "10px", marginBottom: "18px" }}>
-            <button
-              type="button"
-              className="login-button"
-              style={{
-                opacity: mode === "login" ? 1 : 0.55,
-                padding: "12px 14px",
-              }}
-              onClick={() => {
-                setMode("login");
-                setError("");
-                setSuccess("");
-              }}
-            >
-              Login
-            </button>
+          <p>AI-powered resume screening platform</p>
+        </div>
 
-            <button
-              type="button"
-              className="login-button"
-              style={{
-                opacity: mode === "register" ? 1 : 0.55,
-                padding: "12px 14px",
-              }}
-              onClick={() => {
-                setMode("register");
-                setError("");
-                setSuccess("");
-              }}
-            >
-              Register
-            </button>
-          </div>
-
-          <form
-            onSubmit={mode === "login" ? handleLogin : handleRegister}
-            className="login-form"
-            autoComplete="off"
+        <div className="login-mode-switch">
+          <button
+            type="button"
+            className={mode === "login" ? "active" : ""}
+            onClick={() => switchMode("login")}
           >
-            {mode === "register" && (
-              <>
-                <div className="form-group">
-                  <label>Name</label>
-                  <input
-                    type="text"
-                    placeholder="Enter full name"
-                    value={name}
-                    autoComplete="off"
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
-                </div>
-              </>
-            )}
+            Login
+          </button>
 
-            <div className="form-group">
-              <label>Email</label>
-              <input
-                type="email"
-                placeholder="Enter email"
-                value={email}
-                autoComplete="off"
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
+          <button
+            type="button"
+            className={mode === "register" ? "active" : ""}
+            onClick={() => switchMode("register")}
+          >
+            Register
+          </button>
+        </div>
 
-            <div className="form-group">
-              <label>Password</label>
+        <form
+          className="login-form"
+          onSubmit={mode === "login" ? handleLogin : handleRegister}
+          autoComplete="off"
+        >
+          {mode === "register" && (
+            <>
+              <div className="form-group">
+                <label htmlFor="name">Full name</label>
+
+                <input
+                  id="name"
+                  type="text"
+                  placeholder="Enter full name"
+                  value={name}
+                  autoComplete="name"
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                />
+              </div>
+
+             
+
+              
+            </>
+          )}
+
+          <div className="form-group">
+            <label htmlFor="email">Email address</label>
+
+            <input
+              id="email"
+              type="email"
+              placeholder="user@domain.com"
+              value={email}
+              autoComplete={
+                mode === "login" ? "username" : "email"
+              }
+              onChange={(event) => {
+                setEmail(event.target.value);
+
+                if (error) {
+                  setError("");
+                }
+              }}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+
+            <div className="password-input-wrapper">
               <input
-                type="password"
+                id="password"
+                type={showPassword ? "text" : "password"}
                 placeholder="Enter password"
                 value={password}
-                autoComplete="new-password"
-                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={
+                  mode === "login"
+                    ? "current-password"
+                    : "new-password"
+                }
+                minLength={mode === "register" ? 8 : undefined}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+
+                  if (error) {
+                    setError("");
+                  }
+                }}
                 required
               />
+
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((current) => !current)}
+                aria-label={
+                  showPassword ? "Hide password" : "Show password"
+                }
+              >
+                {showPassword ? (
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M3 3l18 18M10.6 10.7a2 2 0 002.7 2.7M9.9 4.3A10.6 10.6 0 0112 4c5.5 0 9 5 9 5a16 16 0 01-3.2 3.5M6.2 6.2C4.2 7.5 3 9 3 9s3.5 5 9 5c1 0 2-.2 2.8-.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M2.5 12s3.5-5.5 9.5-5.5S21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    />
+
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="2.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    />
+                  </svg>
+                )}
+              </button>
             </div>
-
-            {error && <div className="login-error">{error}</div>}
-            {success && <div className="login-error" style={{ background: "#ecfdf5", color: "#047857" }}>{success}</div>}
-
-            <button type="submit" className="login-button" disabled={submitting}>
-              {submitting
-                ? "Please wait..."
-                : mode === "login"
-                  ? "Login to Dashboard"
-                  : "Create Account"}
-            </button>
-          </form>
-
-          <div className="login-footer">
-            Secure internal access for recruiters and screening teams.
           </div>
-        </section>
+
+          {mode === "register" && (
+            <div className="password-requirements">
+              <PasswordRequirement
+                valid={passwordChecks.minLength}
+                label="Minimum 8 characters"
+              />
+
+              <PasswordRequirement
+                valid={passwordChecks.uppercase}
+                label="At least one uppercase letter"
+              />
+
+              <PasswordRequirement
+                valid={passwordChecks.lowercase}
+                label="At least one lowercase letter"
+              />
+
+              <PasswordRequirement
+                valid={passwordChecks.number}
+                label="At least one number"
+              />
+
+              <PasswordRequirement
+                valid={passwordChecks.special}
+                label="At least one special character"
+              />
+            </div>
+          )}
+
+          {error && <div className="login-message error">{error}</div>}
+
+          {success && (
+            <div className="login-message success">{success}</div>
+          )}
+
+          <button
+            type="submit"
+            className="login-submit-button"
+            disabled={submitting}
+          >
+            {submitting
+              ? "Please wait..."
+              : mode === "login"
+                ? "Sign in securely →"
+                : "Create account →"}
+          </button>
+
+          {mode === "login" && (
+            <button
+              type="button"
+              className="forgot-password-button"
+              onClick={() => {
+                setSuccess("");
+                setError(
+                  "Please contact the administrator to reset your password."
+                );
+              }}
+            >
+              Forgot password?
+            </button>
+          )}
+        </form>
       </main>
     </div>
   );

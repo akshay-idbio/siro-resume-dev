@@ -347,7 +347,7 @@ export default function MainAiAnalyze() {
       );
     }
 
-    
+
 
     return messages.join(" ");
   };
@@ -620,12 +620,10 @@ export default function MainAiAnalyze() {
       <main className="main-ai-shell">
         <section className="main-ai-hero">
           <div>
-            <span className="main-ai-eyebrow">MAIN AI ANALYZE</span>
-            <h2>Upload requirement, process resumes, and download recruiter-ready Excel.</h2>
-            <p>
-              This page uses MongoDB-backed jobs, background processing, status polling,
-              and user-wise secure output folders.
-            </p>
+            <h2>
+              Upload requirement, process resumes, and download
+              recruiter-ready Excel.
+            </h2>
           </div>
 
           <div className="main-ai-stats">
@@ -690,10 +688,10 @@ export default function MainAiAnalyze() {
                     Run Low Cost Mode
                   </button>
                 </div>
-                <h3>Create Main AI Job</h3>
+                <h3>Create Candidate Shortlisting Process</h3>
                 <p>Select one requirement Excel and one or more resumes.</p>
               </div>
-              <span className="mode-pill">main_ai</span>
+
             </div>
 
             <input
@@ -815,11 +813,12 @@ export default function MainAiAnalyze() {
 
             <div className="token-grid timing-grid">
               <div>
-                <span>Total Time</span>
+                <span>Total time
+                </span>
                 <strong>{getJobTimeText(activeJob)}</strong>
               </div>
               <div>
-                <span>Avg / Resume</span>
+                <span>Average per resume</span>
                 <strong>{getAverageResumeTime(activeJob)}</strong>
               </div>
               <div>
@@ -884,7 +883,13 @@ export default function MainAiAnalyze() {
               <h3>Recent Jobs</h3>
               <p>{loadingJobs ? "Loading..." : `${jobs.length} job(s) found`}</p>
             </div>
-            <button onClick={loadJobs}>Reload</button>
+            <button
+              type="button"
+              className="secondary-action-button"
+              onClick={loadJobs}
+            >
+              Reload
+            </button>
           </div>
 
           <div className="jobs-table-wrap">
@@ -914,7 +919,13 @@ export default function MainAiAnalyze() {
                     <td>{job.successful}</td>
                     <td>{formatISTDateTime(job.created_at)}</td>
                     <td>
-                      <button onClick={() => openJob(job.job_id)}>Open</button>
+                      <button
+                        type="button"
+                        className="secondary-action-button"
+                        onClick={() => openJob(job.job_id)}
+                      >
+                        Open
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -976,7 +987,7 @@ export default function MainAiAnalyze() {
             <div className="card-title-row">
               <div>
                 <h3>Result Preview</h3>
-                <p>Showing first 20 rows only to keep UI fast.</p>
+                <p>Showing first 20 rows only.</p>
               </div>
             </div>
 
