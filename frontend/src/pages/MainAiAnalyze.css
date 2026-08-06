@@ -337,7 +337,7 @@
 }
 
 .card-title-row p {
-  margin: 6px 0 0;
+  margin: 6px;
   color: var(--brand-muted);
   font-size: 13px;
 }
@@ -880,4 +880,113 @@
   color: #ffffff;
   transform: translateY(-1px);
   box-shadow: 0 6px 14px rgba(198, 4, 60, 0.18);
+}
+.engine-select-box {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.engine-select-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #e5e7eb;
+}
+
+.engine-button-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.engine-button {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  padding: 14px 12px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #e5e7eb;
+  cursor: pointer;
+  text-align: left;
+  transition: 0.2s ease;
+}
+
+.engine-button strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.engine-button span {
+  display: block;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.engine-button.active {
+  border-color: rgba(59, 130, 246, 0.9);
+  background: rgba(37, 99, 235, 0.22);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25);
+}
+
+.engine-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .engine-button-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Engine selector final clean UI */
+.engine-select-box {
+  background: #f8fafc !important;
+  border: 1px solid #dbe3ef !important;
+  box-shadow: none !important;
+}
+
+.engine-select-title {
+  color: #475569 !important;
+  font-weight: 800 !important;
+}
+
+.engine-button {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #d5deea !important;
+}
+
+.engine-button strong {
+  color: #0f172a !important;
+}
+
+.engine-button span {
+  color: #64748b !important;
+}
+
+.engine-button.active {
+  background: #eef4ff !important;
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.22) !important;
+}
+
+.engine-button.active strong {
+  color: #1d4ed8 !important;
+}
+
+.engine-button.active span {
+  color: #1e40af !important;
+}
+
+.engine-button-row.single-engine {
+  grid-template-columns: 1fr;
+}
+
+.engine-button:disabled.active {
+  opacity: 1;
+  cursor: default;
 }

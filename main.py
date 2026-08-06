@@ -32,11 +32,28 @@ from job_db import (
     mark_resume_processing,
     mark_resume_completed,
     mark_resume_failed,
+    mark_all_job_resumes_completed,
+    mark_all_job_resumes_failed,
     update_job_progress,
+    update_job_progress_absolute,
+    update_job_remote_details,
     save_job_results,
+    delete_job_results,
     get_job_resumes,
     update_job_cost,
 )
+
+from job_routes import jobs_router, admin_jobs_router
+
+from qwen_engine_client import (
+    create_resumes_zip,
+    submit_qwen_job,
+    get_qwen_job_status,
+    get_qwen_job_log,
+    download_qwen_result,
+)
+
+
 
 from auth import auth_router, admin_router, get_current_user
 import shutil
@@ -3836,7 +3853,7 @@ async def process_db_backed_main_job_background(
         await mark_job_failed(job_id, str(e))
         
 @app.post("/jobs/{job_id}/start")
-async def start_db_backed_main_job(
+async def start_db_backed_job(
     job_id: str,
     background_tasks: BackgroundTasks,
     cfg: Settings = Depends(get_settings),
@@ -3849,10 +3866,19 @@ async def start_db_backed_main_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if job.get("mode") != "main_ai":
+    mode = str(job.get("mode") or "main_ai").strip().lower()
+    engine = str(job.get("engine") or "engine_1").strip().lower()
+
+    if mode != "main_ai":
         raise HTTPException(
             status_code=400,
-            detail="This endpoint currently supports only main_ai jobs",
+            detail="Engine 1 / Engine 2 start currently supports only main_ai jobs",
+        )
+
+    if engine not in {"engine_1", "engine_2"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid engine for this job: {engine}",
         )
 
     if job.get("status") == "processing":
@@ -3860,7 +3886,6 @@ async def start_db_backed_main_job(
 
     if job.get("status") == "completed":
         raise HTTPException(status_code=409, detail="Job is already completed")
-    
 
     expected_resumes = int(
         job.get("expected_resumes") or 0
@@ -3903,25 +3928,412 @@ async def start_db_backed_main_job(
             },
         )
 
+    if engine == "engine_1":
+        processor_name = "Engine 1"
+        background_tasks.add_task(
+            process_db_backed_main_job_background,
+            job_id,
+            user_id,
+            cfg,
+        )
+
+    elif engine == "engine_2":
+        processor_name = "Engine 2"
+        background_tasks.add_task(
+            process_qwen_remote_job_background,
+            job_id,
+            user_id,
+            cfg,
+        )
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported engine: {engine}",
+        )
+
     await update_job_progress(
         job_id=job_id,
-        message="Job accepted for background processing",
-    )
-
-    background_tasks.add_task(
-        process_db_backed_main_job_background,
-        job_id,
-        user_id,
-        cfg,
+        message=f"{processor_name} job accepted for background processing",
     )
 
     return {
         "success": True,
-        "message": "Job processing started in background",
+        "message": f"{processor_name} job processing started in background",
         "job_id": job_id,
+        "mode": mode,
+        "engine": engine,
         "status": "processing_started",
     }
 
+def parse_qwen_progress_from_log(log_text: str):
+    """
+    Parses remote Qwen matcher.log lines like:
+    [31/2000] filename.pdf - OK | 1 row(s) | 1m 11.76s
+    """
+    if not log_text:
+        return {
+            "processed": 0,
+            "total": 0,
+            "successful": 0,
+            "failed": 0,
+            "skipped": 0,
+            "latest_file": "",
+        }
+
+    processed = 0
+    total = 0
+    successful = 0
+    failed = 0
+    skipped = 0
+    latest_file = ""
+
+    pattern = re.compile(
+        r"\[(\d+)\s*/\s*(\d+)\]\s+(.+?)\s+-\s+([A-Z]+)",
+        re.IGNORECASE,
+    )
+
+    for line in log_text.splitlines():
+        match = pattern.search(line)
+        if not match:
+            continue
+
+        processed = int(match.group(1))
+        total = int(match.group(2))
+        latest_file = match.group(3).strip()
+        status = match.group(4).strip().lower()
+
+        if status == "ok":
+            successful += 1
+        elif status in {"failed", "fail", "error"}:
+            failed += 1
+        elif status == "skipped":
+            skipped += 1
+
+    return {
+        "processed": processed,
+        "total": total,
+        "successful": successful,
+        "failed": failed,
+        "skipped": skipped,
+        "latest_file": latest_file,
+    }
+
+
+
+async def sync_engine2_resume_status_from_progress(job_id: str, processed: int, successful: int, failed: int, total_files: int):
+    """
+    Engine 2 runs remotely on Yotta, so local per-resume DB rows do not update naturally.
+    This syncs the Resume Logs table based on remote processed count.
+    """
+    try:
+        resume_records = await get_job_resumes(job_id)
+        resume_records = sorted(
+            resume_records,
+            key=lambda r: (r.get("original_filename") or r.get("stored_filename") or "")
+        )
+
+        processed = max(0, min(int(processed or 0), len(resume_records)))
+        successful = max(0, int(successful or 0))
+        failed = max(0, int(failed or 0))
+
+        for idx, resume in enumerate(resume_records):
+            resume_id = resume.get("resume_id")
+            if not resume_id:
+                continue
+
+            if idx < processed:
+                await job_resumes_col.update_one(
+                    {"resume_id": resume_id},
+                    {
+                        "$set": {
+                            "status": "completed",
+                            "duration": resume.get("duration") or "0s",
+                            "matches_found": resume.get("matches_found") or 0,
+                            "updated_at": utc_now(),
+                        }
+                    },
+                )
+            else:
+                await job_resumes_col.update_one(
+                    {"resume_id": resume_id, "status": {"$in": ["queued", "processing"]}},
+                    {
+                        "$set": {
+                            "status": "queued",
+                            "updated_at": utc_now(),
+                        }
+                    },
+                )
+    except Exception as e:
+        print(f"[ENGINE_2_RESUME_SYNC_WARNING] job_id={job_id} error={e}")
+
+
+async def process_qwen_remote_job_background(
+    job_id: str,
+    user_id: str,
+    cfg: Settings,
+):
+    try:
+        batch_start_time = time.time()
+
+        job = await get_user_job_by_id(
+            user_id=user_id,
+            job_id=job_id,
+        )
+
+        if not job:
+            await mark_job_failed(job_id, "Job not found")
+            return
+
+        requirement_dir = job.get("requirement_dir")
+        resumes_dir = job.get("resumes_dir")
+        outputs_dir = job.get("outputs_dir")
+        temp_dir = job.get("temp_dir")
+
+        if not requirement_dir or not os.path.exists(requirement_dir):
+            await mark_job_failed(job_id, "Requirement folder not found")
+            return
+
+        if not resumes_dir or not os.path.exists(resumes_dir):
+            await mark_job_failed(job_id, "Resumes folder not found")
+            return
+
+        if not outputs_dir:
+            await mark_job_failed(job_id, "Outputs folder not found")
+            return
+
+        if not temp_dir:
+            temp_dir = outputs_dir
+
+        requirement_files = []
+        requirement_files.extend(glob.glob(os.path.join(requirement_dir, "*.xlsx")))
+        requirement_files.extend(glob.glob(os.path.join(requirement_dir, "*.xls")))
+
+        if not requirement_files:
+            await mark_job_failed(job_id, "No requirement Excel found for this job")
+            return
+
+        requirement_path = requirement_files[0]
+
+        resume_records = await get_job_resumes(job_id)
+        total_files = len(resume_records)
+
+        if total_files <= 0:
+            await mark_job_failed(job_id, "No resumes found for this job")
+            return
+
+        await mark_job_processing(job_id)
+
+        await update_job_progress(
+            job_id=job_id,
+            current_file="Creating resume zip for Engine 2",
+            message="Engine 2 accepted. Preparing resumes for Qwen API.",
+        )
+
+        zip_path = os.path.join(
+            temp_dir,
+            f"qwen_resumes_{job_id}.zip",
+        )
+
+        create_resumes_zip(
+            resumes_dir=resumes_dir,
+            zip_path=zip_path,
+        )
+
+        concurrency = int(os.getenv("QWEN_ENGINE_CONCURRENCY", "12"))
+
+        await update_job_progress(
+            job_id=job_id,
+            current_file="Submitting job to Engine 2",
+            message=f"Submitting job to Qwen remote API with concurrency={concurrency}",
+        )
+
+        submit_response = await submit_qwen_job(
+            requirement_path=requirement_path,
+            resumes_zip_path=zip_path,
+            concurrency=concurrency,
+        )
+
+        remote_job_id = submit_response.get("job_id")
+        remote_status = submit_response.get("status")
+        remote_status_url = submit_response.get("status_url")
+
+        if not remote_job_id:
+            await mark_job_failed(
+                job_id,
+                f"Qwen API did not return remote job_id. Response={submit_response}",
+            )
+            return
+
+        await update_job_remote_details(
+            job_id=job_id,
+            remote_provider="qwen",
+            remote_job_id=remote_job_id,
+            remote_status=remote_status,
+            remote_status_url=remote_status_url,
+            remote_response=submit_response,
+            message="Engine 2 remote job submitted successfully.",
+        )
+
+        poll_interval_seconds = int(os.getenv("QWEN_ENGINE_POLL_SECONDS", "10"))
+        max_wait_seconds = int(os.getenv("QWEN_ENGINE_MAX_WAIT_SECONDS", "86400"))
+        poll_start_time = time.time()
+
+        last_status = ""
+
+        while True:
+            status_response = await get_qwen_job_status(remote_job_id)
+            remote_status = str(status_response.get("status") or "").lower()
+
+            remote_download_url = status_response.get("download_url")
+            remote_log_url = status_response.get("log_url")
+
+            await update_job_remote_details(
+                job_id=job_id,
+                remote_provider="qwen",
+                remote_job_id=remote_job_id,
+                remote_status=remote_status,
+                remote_download_url=remote_download_url,
+                remote_log_url=remote_log_url,
+                remote_response=status_response,
+                message=f"Engine 2 status: {remote_status}",
+            )
+
+            progress_info = None
+
+            try:
+                log_text = await get_qwen_job_log(remote_job_id)
+                progress_info = parse_qwen_progress_from_log(log_text)
+            except Exception:
+                progress_info = None
+
+            if progress_info and progress_info.get("processed", 0) > 0:
+                remote_processed = int(progress_info.get("processed") or 0)
+                remote_successful = int(progress_info.get("successful") or 0)
+                remote_failed = int(progress_info.get("failed") or 0)
+                remote_skipped = int(progress_info.get("skipped") or 0)
+                latest_file = progress_info.get("latest_file") or ""
+
+                await update_job_progress_absolute(
+                    job_id=job_id,
+                    processed=remote_processed,
+                    successful=remote_successful,
+                    failed=remote_failed,
+                    skipped=remote_skipped,
+                    current_file=latest_file,
+                    message=f"Engine 2 progress: {remote_processed}/{total_files}",
+                )
+
+                await sync_engine2_resume_status_from_progress(
+                    job_id=job_id,
+                    processed=remote_processed,
+                    successful=remote_successful,
+                    failed=remote_failed,
+                    total_files=total_files,
+                )
+
+            elif remote_status != last_status:
+                await update_job_progress(
+                    job_id=job_id,
+                    current_file=f"Engine 2 status: {remote_status}",
+                    message=f"Engine 2 remote processing status: {remote_status}",
+                )
+                last_status = remote_status
+
+            if remote_status == "completed":
+                break
+
+            if remote_status in {"failed", "error", "cancelled", "canceled"}:
+                error_message = (
+                    status_response.get("error")
+                    or status_response.get("message")
+                    or f"Engine 2 failed with status={remote_status}"
+                )
+
+                await mark_all_job_resumes_failed(job_id, error_message)
+                await mark_job_failed(job_id, error_message)
+                return
+
+            if time.time() - poll_start_time > max_wait_seconds:
+                await mark_job_failed(
+                    job_id,
+                    f"Engine 2 polling timed out after {max_wait_seconds} seconds",
+                )
+                return
+
+            await asyncio.sleep(poll_interval_seconds)
+
+        await update_job_progress(
+            job_id=job_id,
+            current_file="Downloading Engine 2 output",
+            message="Engine 2 completed. Downloading output Excel.",
+        )
+
+        output_filename = f"qwen_engine_2_output_{job_id}.xlsx"
+        output_path = os.path.join(outputs_dir, output_filename)
+
+        await download_qwen_result(
+            remote_job_id=remote_job_id,
+            output_path=output_path,
+        )
+
+        # Clear old result rows if any.
+        await delete_job_results(job_id)
+
+        # Save downloaded Excel rows into our MongoDB result collection,
+        # so /jobs/{job_id}/results works same as Engine 1.
+        try:
+            df = pd.read_excel(output_path)
+            df = df.fillna("")
+            output_rows = df.to_dict(orient="records")
+
+            if output_rows:
+                # Qwen output may already contain CV File Name / Candidate fields.
+                # We store all rows against remote output source.
+                await save_job_results(
+                    job_id=job_id,
+                    user_id=user_id,
+                    resume_filename="engine_2_qwen_output",
+                    output_rows=output_rows,
+                )
+        except Exception as excel_error:
+            await update_job_progress(
+                job_id=job_id,
+                message=f"Engine 2 output downloaded, but DB result import failed: {excel_error}",
+            )
+
+        await mark_all_job_resumes_completed(job_id)
+
+        batch_seconds = round(time.time() - batch_start_time, 2)
+        average_seconds_per_resume = 0
+
+        if total_files > 0:
+            average_seconds_per_resume = round(batch_seconds / total_files, 2)
+
+        await update_job_progress_absolute(
+            job_id=job_id,
+            processed=total_files,
+            successful=total_files,
+            failed=0,
+            skipped=0,
+            current_file="",
+            message="Engine 2 job completed successfully.",
+        )
+
+        await mark_job_completed(
+            job_id,
+            output_file_path=output_path,
+            processing_time_seconds=batch_seconds,
+            average_seconds_per_resume=average_seconds_per_resume,
+        )
+
+    except Exception as e:
+        try:
+            await mark_all_job_resumes_failed(job_id, str(e))
+        except Exception:
+            pass
+
+        await mark_job_failed(job_id, str(e))
 
 @app.get("/health")
 async def health_check():

@@ -137,6 +137,7 @@ export default function MainAiAnalyze() {
 
   const [requirementFile, setRequirementFile] = useState(null);
   const [resumeFiles, setResumeFiles] = useState([]);
+  const [selectedEngine, setSelectedEngine] = useState("engine_2");
 
   const [jobs, setJobs] = useState([]);
   const [activeJobId, setActiveJobId] = useState("");
@@ -488,6 +489,7 @@ export default function MainAiAnalyze() {
 
       const created = await createJob({
         mode: "main_ai",
+        engine: "engine_2",
         requirementFile,
         expectedResumes: resumeFiles.length,
       });
@@ -537,7 +539,7 @@ export default function MainAiAnalyze() {
       setCreating(false);
       setStarting(true);
 
-      setNotice("All resumes uploaded. Starting AI processing...");
+      setNotice("All resumes uploaded. Starting Siro AI Precision...");
 
       await startJob(jobId);
 
@@ -669,24 +671,19 @@ export default function MainAiAnalyze() {
             <div className="card-title-row">
               <div>
 
-                <div className="mode-switch-row">
-                  <button className="mode-switch-btn active" type="button">
-                    High Accuracy Mode
-                  </button>
-                  <button
-                    className="mode-switch-btn"
-                    type="button"
-                    onClick={() => navigate("/hybrid-ai")}
-                  >
-                    Run Hybrid Mode
-                  </button>
-                  <button
-                    className="mode-switch-btn"
-                    type="button"
-                    onClick={() => navigate("/lowcost-ai")}
-                  >
-                    Run Low Cost Mode
-                  </button>
+                <div className="engine-select-box">
+                  <p className="engine-select-title">Processing Engine</p>
+
+                  <div className="engine-button-row single-engine">
+                    <button
+                      className="engine-button active"
+                      type="button"
+                      disabled
+                    >
+                      <strong>Siro AI Precision</strong>
+                      <span>AI-Powered Resume Matching Engine</span>
+                    </button>
+                  </div>
                 </div>
                 <h3>Create Candidate Shortlisting Process</h3>
                 <p>Select one requirement Excel and one or more resumes.</p>
@@ -783,7 +780,7 @@ export default function MainAiAnalyze() {
                   ? "Creating Job..."
                   : starting
                     ? "Starting..."
-                    : "Create Job & Start Processing"}
+                    : "Create Job & Start Siro AI Precision"}
             </button>
           </div>
 

@@ -182,12 +182,14 @@ async def save_upload_file(upload_file: UploadFile, destination_path: str):
 @job_upload_router.post("/create")
 async def create_upload_job(
     mode: str = Form("main_ai"),
+    engine: str = Form("engine_1"),
     requirement_file: UploadFile = File(...),
     expected_resumes: int = Form(...),
     current_user: dict = Depends(get_current_user),
 ):
     user_id = str(current_user["_id"])
     mode = (mode or "main_ai").strip().lower()
+    engine = (engine or "engine_1").strip().lower()
 
     active_job = await get_active_user_job(user_id)
 
@@ -208,6 +210,14 @@ async def create_upload_job(
         raise HTTPException(
             status_code=400,
             detail=f"Invalid mode. Allowed modes: {sorted(ALLOWED_MODES)}",
+        )
+
+    ALLOWED_ENGINES = {"engine_1", "engine_2"}
+
+    if engine not in ALLOWED_ENGINES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid engine. Allowed engines: {sorted(ALLOWED_ENGINES)}",
         )
 
     expected_resumes = int(expected_resumes or 0)
@@ -236,6 +246,7 @@ async def create_upload_job(
     job_id = await create_job(
         user_id=user_id,
         mode=mode,
+        engine=engine,
         total_resumes=0,
         requirement_filename=safe_req_name,
     )
@@ -270,6 +281,7 @@ async def create_upload_job(
         "message": "Job created. Upload resumes in batches.",
         "job_id": job_id,
         "mode": mode,
+        "engine": engine,
         "expected_resumes": expected_resumes,
         "uploaded_resumes": 0,
         "upload_status": "uploading",

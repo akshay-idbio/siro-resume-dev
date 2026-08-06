@@ -115,6 +115,7 @@ export async function getJobs(limit = 50) {
 
 export async function createJob({
   mode = "main_ai",
+  engine = "engine_1",
   requirementFile,
   expectedResumes,
 }) {
@@ -122,6 +123,7 @@ export async function createJob({
     const formData = new FormData();
 
     formData.append("mode", mode);
+    formData.append("engine", engine);
     formData.append("requirement_file", requirementFile);
     formData.append(
       "expected_resumes",

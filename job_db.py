@@ -69,19 +69,30 @@ async def create_job(
     user_id: str,
     mode: str,
     total_resumes: int,
-    requirement_filename: Optional[str] = "",
+    requirement_filename: str,
+    engine: str = "engine_1",
     storage_base_dir: Optional[str] = None,
-) -> str:
+):
     job_id = generate_job_id()
     now = utc_now()
 
     base_dir = storage_base_dir or get_storage_base_dir()
     folders = create_job_storage_folders(base_dir, user_id, job_id)
 
+    mode = (mode or "main_ai").strip().lower()
+    engine = (engine or "engine_1").strip().lower()
+
     doc = {
         "job_id": job_id,
         "user_id": str(user_id),
-        "mode": mode,  # main_ai / hybrid / lowcost
+
+        # mode = main_ai / hybrid / lowcost
+        "mode": mode,
+
+        # engine_1 = current regular flow
+        # engine_2 = remote Qwen API flow
+        "engine": engine,
+
         "status": "queued",
 
         "requirement_filename": requirement_filename or "",
@@ -99,6 +110,7 @@ async def create_job(
         "uploaded_resumes": 0,
         "upload_status": "uploading",
         "uploaded_batch_ids": [],
+
         "processed": 0,
         "successful": 0,
         "failed": 0,
@@ -107,12 +119,29 @@ async def create_job(
         "input_tokens": 0,
         "output_tokens": 0,
         "total_tokens": 0,
+
         "estimated_cost_inr": 0,
+        "estimated_cost_usd": 0,
+        "cost_per_resume_inr": 0,
+        "cost_per_resume_usd": 0,
 
         "output_file_path": "",
         "error_message": "",
         "current_file": "",
         "message": "Job queued",
+
+        # remote engine fields
+        "remote_provider": "qwen" if engine == "engine_2" else None,
+        "remote_job_id": None,
+        "remote_status": None,
+        "remote_status_url": None,
+        "remote_download_url": None,
+        "remote_log_url": None,
+        "remote_response": None,
+
+        "processing_time_seconds": None,
+        "processing_time_text": "",
+        "average_seconds_per_resume": None,
 
         "created_at": now,
         "updated_at": now,
@@ -197,6 +226,7 @@ async def mark_upload_batch_completed(
 
     return result.modified_count == 1
 
+
 async def mark_job_processing(job_id: str):
     await jobs_col.update_one(
         {"job_id": job_id},
@@ -258,7 +288,92 @@ async def update_job_progress(
     if inc_data:
         update_query["$inc"] = inc_data
 
-    await jobs_col.update_one({"job_id": job_id}, update_query)
+    await jobs_col.update_one(
+        {"job_id": job_id},
+        update_query,
+    )
+
+
+async def update_job_progress_absolute(
+    job_id: str,
+    processed: Optional[int] = None,
+    successful: Optional[int] = None,
+    failed: Optional[int] = None,
+    skipped: Optional[int] = None,
+    current_file: Optional[str] = None,
+    message: Optional[str] = None,
+):
+    set_data = {
+        "updated_at": utc_now(),
+    }
+
+    if processed is not None:
+        set_data["processed"] = int(processed)
+
+    if successful is not None:
+        set_data["successful"] = int(successful)
+
+    if failed is not None:
+        set_data["failed"] = int(failed)
+
+    if skipped is not None:
+        set_data["skipped"] = int(skipped)
+
+    if current_file is not None:
+        set_data["current_file"] = current_file
+
+    if message is not None:
+        set_data["message"] = message
+
+    await jobs_col.update_one(
+        {"job_id": job_id},
+        {"$set": set_data},
+    )
+
+
+async def update_job_remote_details(
+    job_id: str,
+    remote_provider: Optional[str] = None,
+    remote_job_id: Optional[str] = None,
+    remote_status: Optional[str] = None,
+    remote_status_url: Optional[str] = None,
+    remote_download_url: Optional[str] = None,
+    remote_log_url: Optional[str] = None,
+    remote_response: Optional[dict] = None,
+    message: Optional[str] = None,
+):
+    set_data = {
+        "updated_at": utc_now(),
+    }
+
+    if remote_provider is not None:
+        set_data["remote_provider"] = remote_provider
+
+    if remote_job_id is not None:
+        set_data["remote_job_id"] = remote_job_id
+
+    if remote_status is not None:
+        set_data["remote_status"] = remote_status
+
+    if remote_status_url is not None:
+        set_data["remote_status_url"] = remote_status_url
+
+    if remote_download_url is not None:
+        set_data["remote_download_url"] = remote_download_url
+
+    if remote_log_url is not None:
+        set_data["remote_log_url"] = remote_log_url
+
+    if remote_response is not None:
+        set_data["remote_response"] = remote_response
+
+    if message is not None:
+        set_data["message"] = message
+
+    await jobs_col.update_one(
+        {"job_id": job_id},
+        {"$set": set_data},
+    )
 
 
 async def mark_job_completed(
@@ -273,6 +388,7 @@ async def mark_job_completed(
         "updated_at": utc_now(),
         "output_file_path": output_file_path or "",
         "message": "Job completed successfully",
+        "current_file": "",
     }
 
     if processing_time_seconds is not None:
@@ -295,10 +411,9 @@ async def mark_job_completed(
 
     await jobs_col.update_one(
         {"job_id": job_id},
-        {
-            "$set": set_data
-        },
+        {"$set": set_data},
     )
+
 
 async def mark_job_failed(job_id: str, error_message: str):
     await jobs_col.update_one(
@@ -310,6 +425,7 @@ async def mark_job_failed(job_id: str, error_message: str):
                 "updated_at": utc_now(),
                 "error_message": error_message,
                 "message": "Job failed",
+                "current_file": "",
             }
         },
     )
@@ -414,6 +530,33 @@ async def mark_resume_failed(
     )
 
 
+async def mark_all_job_resumes_completed(job_id: str):
+    await job_resumes_col.update_many(
+        {"job_id": job_id},
+        {
+            "$set": {
+                "status": "completed",
+                "completed_at": utc_now(),
+                "updated_at": utc_now(),
+            }
+        },
+    )
+
+
+async def mark_all_job_resumes_failed(job_id: str, error_message: str):
+    await job_resumes_col.update_many(
+        {"job_id": job_id},
+        {
+            "$set": {
+                "status": "failed",
+                "completed_at": utc_now(),
+                "updated_at": utc_now(),
+                "error_message": error_message,
+            }
+        },
+    )
+
+
 # =========================================================
 # RESULT HELPERS
 # =========================================================
@@ -450,6 +593,7 @@ async def save_job_results(
 
                 "experience_mismatch": row.get("Experience Mismatch", ""),
                 "skill_mismatch": row.get("Skill Mismatch", ""),
+                "location_mismatch": row.get("Location Mismatch", ""),
                 "ats": row.get("ATS", ""),
                 "remark": row.get("Remark", ""),
 
@@ -462,6 +606,10 @@ async def save_job_results(
 
     result = await job_results_col.insert_many(docs)
     return len(result.inserted_ids)
+
+
+async def delete_job_results(job_id: str):
+    await job_results_col.delete_many({"job_id": job_id})
 
 
 # =========================================================
@@ -571,6 +719,11 @@ async def create_download_log(
         }
     )
 
+
+# =========================================================
+# ACTIVE JOB
+# =========================================================
+
 async def get_active_user_job(user_id: str):
     return await jobs_col.find_one(
         {
@@ -580,6 +733,10 @@ async def get_active_user_job(user_id: str):
         sort=[("created_at", -1)],
     )
 
+
+# =========================================================
+# COST HELPERS
+# =========================================================
 
 def calculate_claude_cost(
     input_tokens: int = 0,
